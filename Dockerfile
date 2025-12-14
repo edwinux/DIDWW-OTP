@@ -1,0 +1,58 @@
+# =============================================================================
+# DIDWW Voice OTP Gateway - Multi-stage Docker Build
+# =============================================================================
+
+# Stage 1: Build TypeScript
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package*.json tsconfig.json ./
+RUN npm ci
+COPY src/ ./src/
+RUN npm run build \
+    && npm prune --production \
+    && rm -rf /root/.npm
+
+# Stage 2: Production runtime with Asterisk
+FROM alpine:3.19
+
+# Install runtime dependencies including PicoTTS
+RUN apk add --no-cache \
+    asterisk \
+    asterisk-sounds-en \
+    nodejs \
+    gettext \
+    bash \
+    sox \
+    picotts \
+    && rm -rf /var/cache/apk/* \
+    && rm -rf /usr/share/asterisk/sounds/en/silence \
+    && rm -rf /usr/share/asterisk/sounds/en/hello-world.* \
+    && find /var/lib/asterisk -name "*.txt" -delete \
+    && mkdir -p /var/lib/asterisk/sounds/tts
+
+# Create app directory
+WORKDIR /app
+
+# Copy built application
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./
+
+# Copy Asterisk config templates
+COPY src/config/templates /etc/asterisk/templates
+
+# Copy entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Expose ports
+# 8080 - HTTP API
+# 5060 - SIP signaling (UDP)
+# 10000-10020 - RTP media (UDP)
+EXPOSE 8080 5060/udp 10000-10020/udp
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD wget -qO- http://localhost:8080/health || exit 1
+
+ENTRYPOINT ["/entrypoint.sh"]

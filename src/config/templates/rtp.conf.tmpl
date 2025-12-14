@@ -1,0 +1,20 @@
+; =============================================================================
+; RTP Configuration for DIDWW Voice OTP Gateway
+; Generated from template - DO NOT EDIT DIRECTLY
+; =============================================================================
+
+[general]
+; RTP port range for media streams
+; Each concurrent call uses 2 ports (RTP + RTCP)
+rtpstart=${RTP_PORT_START}
+rtpend=${RTP_PORT_END}
+
+; Disable ICE/STUN - not needed for server-side gateway
+icesupport=no
+
+; RTP timeout settings
+rtptimeout=60
+rtpholdtimeout=300
+
+; Enable symmetric RTP for NAT traversal
+strictrtp=yes

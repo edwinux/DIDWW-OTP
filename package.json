@@ -1,0 +1,56 @@
+{
+  "name": "didww-voice-gateway",
+  "version": "0.1.0",
+  "description": "Stateless Voice OTP Gateway using Asterisk and DIDWW SIP trunking",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "voip",
+    "otp",
+    "asterisk",
+    "didww",
+    "sip",
+    "voice",
+    "verification",
+    "supabase"
+  ],
+  "author": "Edwin",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/edwinux/DIDWW-OTP.git"
+  },
+  "bugs": {
+    "url": "https://github.com/edwinux/DIDWW-OTP/issues"
+  },
+  "homepage": "https://github.com/edwinux/DIDWW-OTP#readme",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "ari-client": "^2.2.0",
+    "express": "^4.21.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/ari-client": "^2.2.13",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.0",
+    "@typescript-eslint/eslint-plugin": "^8.17.0",
+    "@typescript-eslint/parser": "^8.17.0",
+    "eslint": "^9.16.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

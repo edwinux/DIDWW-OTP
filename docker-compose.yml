@@ -1,0 +1,30 @@
+services:
+  gateway:
+    build: .
+    container_name: didww-voice-gateway
+    ports:
+      - "8080:8080"
+      - "5060:5060/udp"
+      - "10000-10020:10000-10020/udp"
+    environment:
+      - DIDWW_SIP_HOST=${DIDWW_SIP_HOST}
+      - DIDWW_USERNAME=${DIDWW_USERNAME}
+      - DIDWW_PASSWORD=${DIDWW_PASSWORD}
+      - PUBLIC_IP=${PUBLIC_IP}
+      - API_SECRET=${API_SECRET}
+      - HTTP_PORT=8080
+      - SIP_PORT=5060
+      - RTP_PORT_START=10000
+      - RTP_PORT_END=10020
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    env_file:
+      - .env
+    # Optional: Mount custom sound files
+    # volumes:
+    #   - ./sounds:/var/lib/asterisk/sounds/custom:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

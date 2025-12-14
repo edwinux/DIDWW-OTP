@@ -1,0 +1,21 @@
+; =============================================================================
+; Dialplan Configuration for DIDWW Voice OTP Gateway
+; Generated from template - DO NOT EDIT DIRECTLY
+; =============================================================================
+
+; -----------------------------------------------------------------------------
+; Internal context - Outbound calls initiated by Node.js via ARI
+; -----------------------------------------------------------------------------
+[from-internal]
+; All outbound calls are handled via ARI Stasis
+; This extension routes them to the otp-gateway Stasis app
+exten => _X.,1,NoOp(Outbound call to ${EXTEN})
+ same => n,Stasis(otp-gateway)
+ same => n,Hangup()
+
+; -----------------------------------------------------------------------------
+; Default context - Catch-all for misconfigured calls
+; -----------------------------------------------------------------------------
+[default]
+exten => _X.,1,NoOp(Call to ${EXTEN} in default context - rejecting)
+ same => n,Hangup(CALL_REJECTED)
