@@ -143,6 +143,7 @@ export class DispatchService {
           this.sendWebhook(request.webhookUrl!, {
             event: 'otp.sent',
             request_id: requestId,
+            session_id: request.sessionId,
             phone: request.phone,
             status: 'sent',
             channel: channels[0],
@@ -169,6 +170,7 @@ export class DispatchService {
       this.sendWebhook(request.webhookUrl, {
         event: deliveryResult.success ? 'otp.sent' : 'otp.failed',
         request_id: requestId,
+        session_id: request.sessionId,
         phone: request.phone,
         status: deliveryResult.success ? 'sent' : 'failed',
         channel: deliveryResult.channel,
@@ -308,6 +310,7 @@ export class DispatchService {
       this.sendWebhook(request.webhook_url, {
         event: success ? 'otp.verified' : 'otp.rejected',
         request_id: requestId,
+        session_id: request.session_id || undefined,
         phone: request.phone,
         status: newStatus,
         channel: request.channel || undefined,

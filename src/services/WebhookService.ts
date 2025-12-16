@@ -15,6 +15,7 @@ import { logger } from '../utils/logger.js';
 export interface WebhookPayload {
   event: string;
   request_id: string;
+  session_id?: string;
   phone: string;
   status: string;
   channel?: string;
