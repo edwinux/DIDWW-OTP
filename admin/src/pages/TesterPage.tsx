@@ -29,36 +29,57 @@ export default function TesterPage() {
     };
   }, []);
 
-  const connectWebSocket = (requestId: string) => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/admin/ws`;
+  const connectWebSocket = (): Promise<WebSocket> => {
+    return new Promise((resolve, reject) => {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/admin/ws`;
 
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
+      console.log('[WS] Connecting to:', wsUrl);
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
 
-    ws.onopen = () => {
-      // Subscribe to the otp-requests channel
-      ws.send(JSON.stringify({ type: 'subscribe', channel: 'otp-requests' }));
-    };
+      ws.onopen = () => {
+        console.log('[WS] Connected, subscribing to otp-requests channel');
+        ws.send(JSON.stringify({ type: 'subscribe', channel: 'otp-requests' }));
+        resolve(ws);
+      };
 
-    ws.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        // Listen for otp-request:updated or otp-request:created events
-        if ((message.type === 'otp-request:updated' || message.type === 'otp-request:created') && message.data.id === requestId) {
-          setStatusUpdates(prev => [...prev, { type: 'status', data: message.data }]);
-          if (['delivered', 'failed', 'verified', 'expired', 'rejected'].includes(message.data.status)) {
-            ws.close();
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          console.log('[WS] Message received:', message);
+
+          // Listen for otp-request:updated or otp-request:created events
+          if (message.type === 'otp-request:updated' || message.type === 'otp-request:created') {
+            console.log('[WS] OTP update for:', message.data.id, 'status:', message.data.status);
+            setStatusUpdates(prev => [...prev, { type: 'status', data: message.data }]);
+            if (['delivered', 'failed', 'verified', 'expired', 'rejected'].includes(message.data.status)) {
+              console.log('[WS] Final status reached, closing connection');
+              ws.close();
+            }
           }
+        } catch (err) {
+          console.error('[WS] Message parse error:', err);
         }
-      } catch (err) {
-        console.error('WebSocket message error:', err);
-      }
-    };
+      };
 
-    ws.onerror = (err) => {
-      console.error('WebSocket error:', err);
-    };
+      ws.onerror = (err) => {
+        console.error('[WS] Error:', err);
+        reject(err);
+      };
+
+      ws.onclose = () => {
+        console.log('[WS] Connection closed');
+      };
+
+      // Timeout after 5 seconds
+      setTimeout(() => {
+        if (ws.readyState !== WebSocket.OPEN) {
+          console.error('[WS] Connection timeout');
+          reject(new Error('WebSocket connection timeout'));
+        }
+      }, 5000);
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -71,6 +92,11 @@ export default function TesterPage() {
     setLoading(true);
 
     try {
+      // Connect WebSocket FIRST, before sending OTP
+      console.log('[Test] Connecting WebSocket before sending OTP...');
+      await connectWebSocket();
+      console.log('[Test] WebSocket ready, sending OTP request...');
+
       const response = await api.post<TestOtpResponse>('/admin/test/send-otp', {
         phone_number: phoneNumber,
         caller_id: callerId || undefined,
@@ -79,14 +105,19 @@ export default function TesterPage() {
         language,
       });
 
+      console.log('[Test] OTP response:', response.data);
+
       if (response.data.success && response.data.data) {
         setActiveRequest(response.data.data);
-        connectWebSocket(response.data.data.requestId);
+        console.log('[Test] Waiting for status updates for requestId:', response.data.data.requestId);
       } else {
         setError(response.data.error || 'Failed to send OTP');
+        wsRef.current?.close();
       }
     } catch (err) {
+      console.error('[Test] Error:', err);
       setError(err instanceof Error ? err.message : 'Failed to send OTP');
+      wsRef.current?.close();
     } finally {
       setLoading(false);
     }
