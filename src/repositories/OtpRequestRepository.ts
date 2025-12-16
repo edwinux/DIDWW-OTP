@@ -31,6 +31,7 @@ export interface OtpRequest {
   code_hash: string | null;
   status: OtpStatus;
   channel: string | null;
+  channel_status: string | null;
   channels_requested: string | null;
   ip_address: string | null;
   ip_subnet: string | null;

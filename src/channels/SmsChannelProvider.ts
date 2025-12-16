@@ -6,6 +6,7 @@
  */
 
 import type { IChannelProvider, ChannelDeliveryResult, ChannelType } from './IChannelProvider.js';
+import { emitOtpEvent } from '../services/OtpEventService.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -59,6 +60,9 @@ export class SmsChannelProvider implements IChannelProvider {
       phone: phone.slice(0, 5) + '***',
       source,
     });
+
+    // Emit sending event
+    emitOtpEvent(requestId, 'sms', 'sending');
 
     try {
       // Build Basic Auth header
@@ -114,6 +118,9 @@ export class SmsChannelProvider implements IChannelProvider {
           error: errorDetail,
         });
 
+        // Emit failed event
+        emitOtpEvent(requestId, 'sms', 'failed', { error: errorDetail, error_code: errorCode });
+
         return {
           success: false,
           channelType: 'sms',
@@ -129,6 +136,9 @@ export class SmsChannelProvider implements IChannelProvider {
         requestId,
         messageId,
       });
+
+      // Emit sent event (delivery confirmation comes via DLR callback)
+      emitOtpEvent(requestId, 'sms', 'sent', { provider_id: messageId });
 
       return {
         success: true,
@@ -146,6 +156,9 @@ export class SmsChannelProvider implements IChannelProvider {
         requestId,
         error: errorMessage,
       });
+
+      // Emit failed event
+      emitOtpEvent(requestId, 'sms', 'failed', { error: errorMessage, error_code: 'NETWORK_ERROR' });
 
       return {
         success: false,

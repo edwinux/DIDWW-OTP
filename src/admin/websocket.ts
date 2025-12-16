@@ -205,6 +205,7 @@ export class AdminWebSocketServer {
     id: string;
     status: string;
     channel?: string;
+    channel_status?: string;
     updated_at: number;
   }): void {
     this.broadcast('otp-requests', 'otp-request:updated', update);

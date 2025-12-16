@@ -8,8 +8,7 @@ import type { Client as AriClient, Channel } from 'ari-client';
 import { getConfig } from '../config/index.js';
 import { logger } from '../utils/logger.js';
 import { generateOtpTts } from '../utils/tts.js';
-import { OtpRequestRepository } from '../repositories/OtpRequestRepository.js';
-import { getWebSocketServer } from '../admin/websocket.js';
+import { emitOtpEvent } from '../services/OtpEventService.js';
 
 /**
  * Active calls tracking
@@ -29,45 +28,22 @@ export function registerStasisHandlers(client: AriClient): void {
       return;
     }
 
-    logger.info('Call answered, playing OTP', { callId });
+    // Emit answered event
+    emitOtpEvent(callId, 'voice', 'answered');
+    logger.info('Call answered', { callId });
 
     try {
-      await handleOtpCall(client, channel, callData.code);
+      await handleOtpCall(client, channel, callData.code, callId);
 
-      // Update status to delivered after OTP is played
-      const otpRepo = new OtpRequestRepository();
-      otpRepo.updateStatus(callId, 'delivered');
-
-      // Broadcast status update via WebSocket
-      const wsServer = getWebSocketServer();
-      if (wsServer) {
-        wsServer.broadcastOtpUpdate({
-          id: callId,
-          status: 'delivered',
-          channel: 'voice',
-          updated_at: Date.now(),
-        });
-      }
-
-      logger.info('Voice OTP delivered', { callId });
+      // Emit completed event
+      emitOtpEvent(callId, 'voice', 'completed');
+      logger.info('Voice OTP completed', { callId });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       logger.error('Error in OTP call flow', { callId, error: msg });
 
-      // Update status to failed on error
-      const otpRepo = new OtpRequestRepository();
-      otpRepo.updateStatus(callId, 'failed', { error_message: msg });
-
-      // Broadcast failure via WebSocket
-      const wsServer = getWebSocketServer();
-      if (wsServer) {
-        wsServer.broadcastOtpUpdate({
-          id: callId,
-          status: 'failed',
-          channel: 'voice',
-          updated_at: Date.now(),
-        });
-      }
+      // Emit failed event with error details
+      emitOtpEvent(callId, 'voice', 'failed', { error: msg });
     } finally {
       activeCalls.delete(callId);
     }
@@ -85,13 +61,16 @@ export function registerStasisHandlers(client: AriClient): void {
 /**
  * Handle the OTP call flow: answer, generate TTS, play message, hangup
  */
-async function handleOtpCall(client: AriClient, channel: Channel, code: string): Promise<void> {
+async function handleOtpCall(client: AriClient, channel: Channel, code: string, callId: string): Promise<void> {
   const config = getConfig();
   const { messageTemplate, speed } = config.voice;
 
   // Answer the call
   await channel.answer();
   await sleep(500);
+
+  // Emit playing event
+  emitOtpEvent(callId, 'voice', 'playing');
 
   try {
     // Generate TTS audio from template
@@ -172,6 +151,9 @@ export async function originateOtpCall(
   // Store call data for StasisStart handler
   activeCalls.set(callId, { phone, code });
 
+  // Emit calling event
+  emitOtpEvent(callId, 'voice', 'calling');
+
   try {
     const channel = client.Channel();
 
@@ -187,9 +169,12 @@ export async function originateOtpCall(
       },
     });
 
+    // Emit ringing event after successful originate
+    emitOtpEvent(callId, 'voice', 'ringing');
     logger.info('Call originated', { callId, phone: phone.slice(0, 3) + '***' });
   } catch (error) {
     activeCalls.delete(callId);
+    emitOtpEvent(callId, 'voice', 'failed', { error: 'Call origination failed' });
     throw error;
   }
 }

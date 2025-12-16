@@ -52,9 +52,11 @@ export default function TesterPage() {
       ws.onopen = () => {
         console.log('[WS] Connected to WebSocket');
         addConsoleEntry('success', 'WS', 'Connected to WebSocket');
+        // Subscribe to both status updates and detailed events
         ws.send(JSON.stringify({ type: 'subscribe', channel: 'otp-requests' }));
-        console.log('[WS] Subscribed to otp-requests channel');
-        addConsoleEntry('info', 'WS', 'Subscribed to otp-requests channel');
+        ws.send(JSON.stringify({ type: 'subscribe', channel: 'otp-events' }));
+        console.log('[WS] Subscribed to otp-requests and otp-events channels');
+        addConsoleEntry('info', 'WS', 'Subscribed to real-time channels');
         setWsConnected(true);
         resolve(ws);
       };
@@ -65,24 +67,40 @@ export default function TesterPage() {
           const message = JSON.parse(event.data);
           console.log('[WS] Parsed message:', message);
 
-          if (message.type === 'otp-request:updated' || message.type === 'otp-request:created') {
-            const data = message.data as OtpRequest;
-            const statusType = getStatusType(data.status);
-            console.log('[WS] OTP status update:', data.status, data);
+          // Handle detailed channel events (preferred)
+          if (message.type === 'otp-event') {
+            const data = message.data as {
+              request_id: string;
+              channel: string;
+              event_type: string;
+              event_data?: Record<string, unknown>;
+              timestamp: number;
+            };
+            console.log('[WS] Channel event:', data.channel, data.event_type);
 
-            // Add status update to console
-            addConsoleEntry(
-              statusType,
-              getSourceForStatus(data.status, data.channel),
-              formatStatusMessage(data.status, data.channel, data.error_message),
-              data
-            );
+            const { type: entryType, source, message: msg } = formatChannelEvent(data.channel, data.event_type, data.event_data);
+            addConsoleEntry(entryType, source, msg, data);
 
-            // Close WebSocket on final status
-            if (['delivered', 'failed', 'verified', 'expired', 'rejected'].includes(data.status)) {
-              console.log('[WS] Final status reached, closing connection');
-              addConsoleEntry('system', 'WS', 'Final status reached, closing connection');
+            // Close WebSocket on final events
+            if (['completed', 'delivered', 'failed', 'undelivered'].includes(data.event_type)) {
+              console.log('[WS] Final event reached, closing connection');
+              addConsoleEntry('system', 'WS', 'Delivery complete, closing connection');
               ws.close();
+            }
+          }
+          // Handle legacy status updates (backward compatibility)
+          else if (message.type === 'otp-request:updated' || message.type === 'otp-request:created') {
+            const data = message.data as OtpRequest;
+            console.log('[WS] Legacy status update:', data.status, data);
+            // Only log if we don't have channel_status (old events)
+            if (!data.channel_status) {
+              const statusType = getStatusType(data.status);
+              addConsoleEntry(
+                statusType,
+                getSourceForStatus(data.status, data.channel),
+                formatStatusMessage(data.status, data.channel, data.error_message),
+                data
+              );
             }
           }
         } catch (err) {
@@ -270,4 +288,62 @@ function formatStatusMessage(status: string, channel: string | null, errorMessag
     default:
       return `Status: ${status}`;
   }
+}
+
+/**
+ * Format channel-specific events for display
+ */
+function formatChannelEvent(
+  channel: string,
+  eventType: string,
+  eventData?: Record<string, unknown>
+): { type: ConsoleEntry['type']; source: ConsoleEntry['source']; message: string } {
+  // Voice events
+  if (channel === 'voice') {
+    switch (eventType) {
+      case 'calling':
+        return { type: 'info', source: 'VOICE', message: 'Initiating call...' };
+      case 'ringing':
+        return { type: 'info', source: 'VOICE', message: 'Phone is ringing...' };
+      case 'answered':
+        return { type: 'success', source: 'VOICE', message: 'Call answered' };
+      case 'playing':
+        return { type: 'info', source: 'VOICE', message: 'Playing OTP code...' };
+      case 'completed':
+        return { type: 'success', source: 'VOICE', message: 'Call completed successfully' };
+      case 'failed':
+        return { type: 'error', source: 'VOICE', message: eventData?.error as string || 'Call failed' };
+      case 'no_answer':
+        return { type: 'warning', source: 'VOICE', message: 'No answer' };
+      case 'busy':
+        return { type: 'warning', source: 'VOICE', message: 'Line busy' };
+      case 'hangup':
+        return { type: 'warning', source: 'VOICE', message: 'Call hung up' };
+      default:
+        return { type: 'info', source: 'VOICE', message: `Voice: ${eventType}` };
+    }
+  }
+
+  // SMS events
+  if (channel === 'sms') {
+    switch (eventType) {
+      case 'queued':
+        return { type: 'info', source: 'SMS', message: 'SMS queued for sending' };
+      case 'sending':
+        return { type: 'info', source: 'SMS', message: 'Sending SMS...' };
+      case 'sent':
+        return { type: 'info', source: 'SMS', message: 'SMS sent to carrier' };
+      case 'delivered':
+        return { type: 'success', source: 'DLR', message: 'SMS delivered to device' };
+      case 'failed':
+        return { type: 'error', source: 'SMS', message: eventData?.error as string || 'SMS delivery failed' };
+      case 'undelivered':
+        return { type: 'error', source: 'DLR', message: 'SMS could not be delivered' };
+      default:
+        return { type: 'info', source: 'SMS', message: `SMS: ${eventType}` };
+    }
+  }
+
+  // Generic fallback
+  return { type: 'info', source: 'GATEWAY', message: `${channel}: ${eventType}` };
 }

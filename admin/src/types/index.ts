@@ -6,6 +6,7 @@ export interface OtpRequest {
   code_hash: string | null;
   status: 'pending' | 'sending' | 'sent' | 'delivered' | 'failed' | 'verified' | 'rejected' | 'expired';
   channel: string | null;
+  channel_status: string | null;
   channels_requested: string | null;
   ip_address: string | null;
   ip_subnet: string | null;

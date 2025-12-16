@@ -10,7 +10,7 @@ export interface ConsoleEntry {
   id: string;
   timestamp: Date;
   type: 'info' | 'success' | 'warning' | 'error' | 'system';
-  source: 'UI' | 'WS' | 'API' | 'FRAUD' | 'GATEWAY' | 'DLR' | 'SIP' | 'VOICE';
+  source: 'UI' | 'WS' | 'API' | 'FRAUD' | 'GATEWAY' | 'DLR' | 'SIP' | 'VOICE' | 'SMS';
   message: string;
   data?: unknown;
 }
@@ -30,6 +30,7 @@ const sourceColors: Record<string, string> = {
   DLR: 'text-pink-400',
   SIP: 'text-orange-400',
   VOICE: 'text-purple-400',
+  SMS: 'text-teal-400',
 };
 
 const typeIcons: Record<string, string> = {

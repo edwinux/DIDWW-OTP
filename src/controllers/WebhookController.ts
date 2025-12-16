@@ -8,7 +8,7 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import type { DispatchService } from '../services/DispatchService.js';
 import { OtpRequestRepository } from '../repositories/OtpRequestRepository.js';
-import { getWebSocketServer } from '../admin/websocket.js';
+import { emitOtpEvent } from '../services/OtpEventService.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -141,37 +141,30 @@ export class WebhookController {
       return;
     }
 
-    // Map DIDWW status to our status (case-insensitive - status already lowercased)
-    let newStatus: 'delivered' | 'failed' | null = null;
+    // Map DIDWW status to SMS event type (case-insensitive - status already lowercased)
+    let eventType: 'delivered' | 'failed' | 'undelivered' | null = null;
     if (status === 'delivered' || status === 'sent' || status === 'success') {
-      newStatus = 'delivered';
-    } else if (status === 'failed' || status === 'rejected' || status === 'expired' || status === 'undelivered') {
-      newStatus = 'failed';
+      eventType = 'delivered';
+    } else if (status === 'failed' || status === 'rejected' || status === 'expired') {
+      eventType = 'failed';
+    } else if (status === 'undelivered') {
+      eventType = 'undelivered';
     }
 
-    if (newStatus) {
-      // Update database
-      otpRepo.updateStatus(otpRequest.id, newStatus, {
-        error_message: data.attributes.error_message || undefined,
-      });
+    if (eventType) {
+      // Emit SMS event (handles DB update and WebSocket broadcast)
+      const eventData = data.attributes.error_message
+        ? { error: data.attributes.error_message, error_code: data.attributes.error_code }
+        : undefined;
 
-      logger.info('OTP request status updated from DLR', {
+      emitOtpEvent(otpRequest.id, 'sms', eventType, eventData);
+
+      logger.info('SMS DLR event emitted', {
         requestId: otpRequest.id,
         messageId,
+        eventType,
         oldStatus: otpRequest.status,
-        newStatus,
       });
-
-      // Broadcast via WebSocket
-      const wsServer = getWebSocketServer();
-      if (wsServer) {
-        wsServer.broadcastOtpUpdate({
-          id: otpRequest.id,
-          status: newStatus,
-          channel: otpRequest.channel || undefined,
-          updated_at: Date.now(),
-        });
-      }
     }
 
     res.status(200).json({

@@ -10,7 +10,7 @@ import { logger } from '../utils/logger.js';
 /**
  * Schema version for migration tracking
  */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 /**
  * SQL schema definitions
@@ -133,6 +133,28 @@ CREATE TABLE IF NOT EXISTS webhook_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_webhook_logs_request_id ON webhook_logs(request_id);
+
+-- OTP event log for channel-specific status tracking (V2)
+CREATE TABLE IF NOT EXISTS otp_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  request_id TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  event_data TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (request_id) REFERENCES otp_requests(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_otp_events_request_id ON otp_events(request_id);
+CREATE INDEX IF NOT EXISTS idx_otp_events_created_at ON otp_events(created_at);
+`;
+
+/**
+ * V2 Migration: Add channel_status column and otp_events table
+ */
+const V2_MIGRATION_SQL = `
+-- Add channel_status column for detailed channel-specific status
+ALTER TABLE otp_requests ADD COLUMN channel_status TEXT;
 `;
 
 /**
@@ -159,9 +181,25 @@ export function runMigrations(): void {
     return;
   }
 
-  // Run schema creation
-  logger.info('Applying schema...', { from: currentVersion, to: SCHEMA_VERSION });
-  db.exec(SCHEMA_SQL);
+  // Run base schema creation (for fresh installs)
+  if (currentVersion === 0) {
+    logger.info('Applying base schema...', { version: 1 });
+    db.exec(SCHEMA_SQL);
+  }
+
+  // Run V2 migration if upgrading from V1
+  if (currentVersion < 2) {
+    logger.info('Applying V2 migration...', { from: currentVersion, to: 2 });
+    try {
+      db.exec(V2_MIGRATION_SQL);
+    } catch (err) {
+      // Column might already exist if schema was created fresh with V2
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('duplicate column')) {
+        throw err;
+      }
+    }
+  }
 
   // Record schema version
   db.prepare('INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)').run(
