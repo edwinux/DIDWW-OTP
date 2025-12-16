@@ -16,8 +16,9 @@ import { logger } from './utils/logger.js';
 export function createServer(dispatchService: DispatchService): Express {
   const app = express();
 
-  // Middleware
-  app.use(express.json({ limit: '10kb' }));
+  // Middleware - support JSON, JSON:API, and URL-encoded (for DIDWW DLR callbacks)
+  app.use(express.json({ limit: '10kb', type: ['application/json', 'application/vnd.api+json'] }));
+  app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
   // Trust proxy for accurate IP extraction
   app.set('trust proxy', true);

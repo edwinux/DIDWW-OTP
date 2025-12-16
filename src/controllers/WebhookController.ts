@@ -90,11 +90,19 @@ export class WebhookController {
    * Handle POST /webhooks/dlr - DIDWW delivery report callback
    */
   async handleDlrCallback(req: Request, res: Response): Promise<void> {
+    // Log raw request for debugging
+    logger.debug('DLR callback received', {
+      contentType: req.headers['content-type'],
+      body: JSON.stringify(req.body).slice(0, 500),
+      query: req.query,
+    });
+
     const validation = dlrCallbackSchema.safeParse(req.body);
 
     if (!validation.success) {
       // Log but still return 200 to acknowledge receipt
       logger.warn('Invalid DLR callback format', {
+        contentType: req.headers['content-type'],
         body: JSON.stringify(req.body).slice(0, 500),
       });
       res.status(200).json({ status: 'acknowledged' });
