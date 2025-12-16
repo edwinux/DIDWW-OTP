@@ -45,7 +45,7 @@ export function TopBar() {
     const checkGatewayStatus = async () => {
       try {
         const response = await api.get('/admin/health');
-        setGatewayStatus(response.data.status === 'ok' ? 'online' : 'offline');
+        setGatewayStatus(response.data.status === 'healthy' ? 'online' : 'offline');
       } catch {
         setGatewayStatus('offline');
       }

@@ -128,6 +128,15 @@ export class OtpRequestRepository {
   }
 
   /**
+   * Find OTP request by provider ID (message ID from DIDWW)
+   * Uses case-insensitive matching since DIDWW may send different cases
+   */
+  findByProviderId(providerId: string): OtpRequest | null {
+    const stmt = this.db.prepare('SELECT * FROM otp_requests WHERE LOWER(provider_id) = LOWER(?)');
+    return (stmt.get(providerId) as OtpRequest) || null;
+  }
+
+  /**
    * Update OTP request status
    */
   updateStatus(

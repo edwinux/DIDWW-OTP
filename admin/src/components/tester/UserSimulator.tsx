@@ -42,6 +42,7 @@ interface OtpConfig {
   voiceSpeed: string;
   repeatCount: string;
   language: string;
+  channel: string;
 }
 
 export function UserSimulator({
@@ -53,6 +54,7 @@ export function UserSimulator({
   error,
 }: UserSimulatorProps) {
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [channel, setChannel] = useState('voice');
   const [voiceSpeed, setVoiceSpeed] = useState('1.0');
   const [repeatCount, setRepeatCount] = useState('2');
   const [language, setLanguage] = useState('en');
@@ -61,7 +63,7 @@ export function UserSimulator({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setVerifyCode('');
-    await onSendOtp({ phoneNumber, callerId: '', voiceSpeed, repeatCount, language });
+    await onSendOtp({ phoneNumber, callerId: '', voiceSpeed, repeatCount, language, channel });
   };
 
   const handleVerify = async () => {
@@ -102,11 +104,25 @@ export function UserSimulator({
             </div>
           </div>
 
+          {/* Channel Selection */}
+          <div className="space-y-1.5">
+            <Label className="text-xs">Channel</Label>
+            <Select value={channel} onValueChange={setChannel} disabled={loading}>
+              <SelectTrigger className="h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="voice">Voice Call</SelectItem>
+                <SelectItem value="sms">SMS</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Advanced Options */}
           <div className="grid grid-cols-3 gap-2">
             <div className="space-y-1.5">
               <Label className="text-xs">Speed</Label>
-              <Select value={voiceSpeed} onValueChange={setVoiceSpeed} disabled={loading}>
+              <Select value={voiceSpeed} onValueChange={setVoiceSpeed} disabled={loading || channel === 'sms'}>
                 <SelectTrigger className="h-9">
                   <SelectValue />
                 </SelectTrigger>
@@ -119,7 +135,7 @@ export function UserSimulator({
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Repeat</Label>
-              <Select value={repeatCount} onValueChange={setRepeatCount} disabled={loading}>
+              <Select value={repeatCount} onValueChange={setRepeatCount} disabled={loading || channel === 'sms'}>
                 <SelectTrigger className="h-9">
                   <SelectValue />
                 </SelectTrigger>
@@ -132,7 +148,7 @@ export function UserSimulator({
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Language</Label>
-              <Select value={language} onValueChange={setLanguage} disabled={loading}>
+              <Select value={language} onValueChange={setLanguage} disabled={loading || channel === 'sms'}>
                 <SelectTrigger className="h-9">
                   <SelectValue />
                 </SelectTrigger>

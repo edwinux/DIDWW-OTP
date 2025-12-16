@@ -65,17 +65,22 @@ export function Sidebar() {
                   end={item.end}
                   className={({ isActive }) =>
                     cn(
-                      'flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors',
+                      'block px-3 py-2.5 rounded-md transition-colors',
                       'hover:bg-accent hover:text-accent-foreground',
                       isActive
                         ? 'bg-primary/10 text-primary border-l-2 border-primary'
                         : 'text-muted-foreground',
-                      collapsed && 'justify-center px-2'
+                      collapsed && 'px-2'
                     )
                   }
                 >
-                  {item.icon}
-                  {!collapsed && <span className="text-sm font-medium">{item.label}</span>}
+                  <span className={cn(
+                    'flex items-center gap-3',
+                    collapsed && 'justify-center'
+                  )}>
+                    <span className="shrink-0">{item.icon}</span>
+                    {!collapsed && <span className="text-sm font-medium">{item.label}</span>}
+                  </span>
                 </NavLink>
               </TooltipTrigger>
               {collapsed && (

@@ -50,20 +50,25 @@ export default function TesterPage() {
       wsRef.current = ws;
 
       ws.onopen = () => {
+        console.log('[WS] Connected to WebSocket');
         addConsoleEntry('success', 'WS', 'Connected to WebSocket');
         ws.send(JSON.stringify({ type: 'subscribe', channel: 'otp-requests' }));
+        console.log('[WS] Subscribed to otp-requests channel');
         addConsoleEntry('info', 'WS', 'Subscribed to otp-requests channel');
         setWsConnected(true);
         resolve(ws);
       };
 
       ws.onmessage = (event) => {
+        console.log('[WS] Message received:', event.data);
         try {
           const message = JSON.parse(event.data);
+          console.log('[WS] Parsed message:', message);
 
           if (message.type === 'otp-request:updated' || message.type === 'otp-request:created') {
             const data = message.data as OtpRequest;
             const statusType = getStatusType(data.status);
+            console.log('[WS] OTP status update:', data.status, data);
 
             // Add status update to console
             addConsoleEntry(
@@ -75,21 +80,25 @@ export default function TesterPage() {
 
             // Close WebSocket on final status
             if (['delivered', 'failed', 'verified', 'expired', 'rejected'].includes(data.status)) {
+              console.log('[WS] Final status reached, closing connection');
               addConsoleEntry('system', 'WS', 'Final status reached, closing connection');
               ws.close();
             }
           }
         } catch (err) {
+          console.error('[WS] Parse error:', err);
           addConsoleEntry('error', 'WS', `Parse error: ${err}`);
         }
       };
 
-      ws.onerror = () => {
+      ws.onerror = (event) => {
+        console.error('[WS] Connection error:', event);
         addConsoleEntry('error', 'WS', 'Connection error');
         reject(new Error('WebSocket error'));
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
+        console.log('[WS] Connection closed:', event.code, event.reason);
         addConsoleEntry('system', 'WS', 'Connection closed');
         setWsConnected(false);
       };
@@ -109,6 +118,7 @@ export default function TesterPage() {
     voiceSpeed: string;
     repeatCount: string;
     language: string;
+    channel: string;
   }) => {
     setError('');
     setActiveRequest(null);
@@ -129,6 +139,7 @@ export default function TesterPage() {
         voice_speed: parseFloat(config.voiceSpeed),
         repeat_count: parseInt(config.repeatCount),
         language: config.language,
+        channel: config.channel,
       });
 
       if (response.data.success && response.data.data) {
@@ -138,7 +149,6 @@ export default function TesterPage() {
           'API',
           `OTP created: ${response.data.data.requestId.substring(0, 8)}... Code: ${response.data.data.otpCode}`
         );
-        addConsoleEntry('info', 'FRAUD', 'Running fraud detection checks...');
       } else {
         setError(response.data.error || 'Failed to send OTP');
         addConsoleEntry('error', 'API', response.data.error || 'Failed to send OTP');

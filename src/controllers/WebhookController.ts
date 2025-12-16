@@ -7,6 +7,8 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import type { DispatchService } from '../services/DispatchService.js';
+import { OtpRequestRepository } from '../repositories/OtpRequestRepository.js';
+import { getWebSocketServer } from '../admin/websocket.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -119,17 +121,58 @@ export class WebhookController {
 
     const { data } = validation.data;
     const messageId = data.id;
-    const status = data.attributes.status;
+    const status = data.attributes.status.toLowerCase();
 
     logger.info('DLR callback received', {
       messageId,
       status,
+      originalStatus: data.attributes.status,
       errorCode: data.attributes.error_code,
       errorMessage: data.attributes.error_message,
     });
 
-    // TODO: Update OTP request status based on DLR
-    // This would require looking up the request by provider_id (messageId)
+    // Look up OTP request by provider_id
+    const otpRepo = new OtpRequestRepository();
+    const otpRequest = otpRepo.findByProviderId(messageId);
+
+    if (!otpRequest) {
+      logger.warn('DLR callback for unknown message', { messageId });
+      res.status(200).json({ status: 'acknowledged', message: 'unknown message' });
+      return;
+    }
+
+    // Map DIDWW status to our status (case-insensitive - status already lowercased)
+    let newStatus: 'delivered' | 'failed' | null = null;
+    if (status === 'delivered' || status === 'sent' || status === 'success') {
+      newStatus = 'delivered';
+    } else if (status === 'failed' || status === 'rejected' || status === 'expired' || status === 'undelivered') {
+      newStatus = 'failed';
+    }
+
+    if (newStatus) {
+      // Update database
+      otpRepo.updateStatus(otpRequest.id, newStatus, {
+        error_message: data.attributes.error_message || undefined,
+      });
+
+      logger.info('OTP request status updated from DLR', {
+        requestId: otpRequest.id,
+        messageId,
+        oldStatus: otpRequest.status,
+        newStatus,
+      });
+
+      // Broadcast via WebSocket
+      const wsServer = getWebSocketServer();
+      if (wsServer) {
+        wsServer.broadcastOtpUpdate({
+          id: otpRequest.id,
+          status: newStatus,
+          channel: otpRequest.channel || undefined,
+          updated_at: Date.now(),
+        });
+      }
+    }
 
     res.status(200).json({
       status: 'received',

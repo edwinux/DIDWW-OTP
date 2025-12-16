@@ -16,8 +16,10 @@ RUN npm run build \
 FROM node:20-alpine AS admin-builder
 WORKDIR /app/admin
 COPY admin/package*.json admin/tsconfig.json admin/vite.config.ts admin/index.html ./
+COPY admin/tailwind.config.js admin/postcss.config.js ./
 RUN npm ci
 COPY admin/src/ ./src/
+COPY admin/public/ ./public/
 RUN npm run build \
     && rm -rf node_modules /root/.npm
 
