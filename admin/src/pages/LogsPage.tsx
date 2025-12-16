@@ -5,7 +5,7 @@ import type { OtpRequest, PaginatedResponse, FilterValues } from '../types';
 export default function LogsPage() {
   const [logs, setLogs] = useState<OtpRequest[]>([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 25, total: 0, totalPages: 0 });
-  const [filters, setFilters] = useState({ status: '', phone_number: '', request_id: '' });
+  const [filters, setFilters] = useState({ status: '', phone: '', id: '' });
   const [filterValues, setFilterValues] = useState<FilterValues>({ statuses: [], languages: [] });
   const [loading, setLoading] = useState(true);
   const [selectedLog, setSelectedLog] = useState<OtpRequest | null>(null);
@@ -18,8 +18,8 @@ export default function LogsPage() {
         limit: pagination.limit.toString(),
       });
       if (filters.status) params.set('status', filters.status);
-      if (filters.phone_number) params.set('phone_number', filters.phone_number);
-      if (filters.request_id) params.set('request_id', filters.request_id);
+      if (filters.phone) params.set('phone', filters.phone);
+      if (filters.id) params.set('id', filters.id);
 
       const response = await api.get<PaginatedResponse<OtpRequest>>(`/admin/logs/otp-requests?${params}`);
       setLogs(response.data.data);
@@ -45,12 +45,13 @@ export default function LogsPage() {
   };
 
   const statusColors: Record<string, string> = {
-    completed: 'badge-success',
+    delivered: 'badge-success',
     verified: 'badge-success',
+    sent: 'badge-success',
     pending: 'badge-warning',
-    calling: 'badge-info',
-    answered: 'badge-info',
+    sending: 'badge-info',
     failed: 'badge-error',
+    rejected: 'badge-error',
     expired: 'badge-gray',
   };
 
@@ -79,8 +80,8 @@ export default function LogsPage() {
               type="text"
               className="form-input"
               placeholder="Filter by phone..."
-              value={filters.phone_number}
-              onChange={(e) => handleFilterChange('phone_number', e.target.value)}
+              value={filters.phone}
+              onChange={(e) => handleFilterChange('phone', e.target.value)}
             />
           </div>
           <div className="filter-group">
@@ -88,9 +89,9 @@ export default function LogsPage() {
             <input
               type="text"
               className="form-input"
-              placeholder="Filter by request ID..."
-              value={filters.request_id}
-              onChange={(e) => handleFilterChange('request_id', e.target.value)}
+              placeholder="Filter by ID..."
+              value={filters.id}
+              onChange={(e) => handleFilterChange('id', e.target.value)}
             />
           </div>
           <div className="filter-group">
@@ -119,11 +120,12 @@ export default function LogsPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>Request ID</th>
+                    <th>ID</th>
                     <th>Phone</th>
                     <th>Status</th>
-                    <th>OTP</th>
+                    <th>Channel</th>
                     <th>Fraud Score</th>
+                    <th>Country</th>
                     <th>Created</th>
                     <th>Actions</th>
                   </tr>
@@ -132,22 +134,21 @@ export default function LogsPage() {
                   {logs.map(log => (
                     <tr key={log.id}>
                       <td className="text-sm" style={{ fontFamily: 'monospace' }}>
-                        {log.request_id.substring(0, 8)}...
+                        {log.id.substring(0, 8)}...
                       </td>
-                      <td>{log.phone_number}</td>
+                      <td>{log.phone}</td>
                       <td>
                         <span className={`badge ${statusColors[log.status] || 'badge-gray'}`}>
                           {log.status}
                         </span>
                       </td>
-                      <td style={{ fontFamily: 'monospace' }}>{log.otp_code}</td>
+                      <td>{log.channel || '-'}</td>
                       <td>
-                        {log.fraud_score !== undefined && log.fraud_score !== null ? (
-                          <span className={log.fraud_score > 50 ? 'text-error' : log.fraud_score > 25 ? 'text-warning' : 'text-success'}>
-                            {log.fraud_score}
-                          </span>
-                        ) : 'N/A'}
+                        <span className={log.fraud_score > 50 ? 'text-error' : log.fraud_score > 25 ? 'text-warning' : 'text-success'}>
+                          {log.fraud_score}
+                        </span>
                       </td>
+                      <td>{log.country_code || '-'}</td>
                       <td className="text-sm">{new Date(log.created_at).toLocaleString()}</td>
                       <td>
                         <button

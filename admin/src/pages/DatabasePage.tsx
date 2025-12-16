@@ -1,11 +1,20 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
-import type { TableInfo, TableSchema } from '../types';
+import type { TableInfo } from '../types';
+
+interface ColumnInfo {
+  name: string;
+  type: string;
+  notNull: boolean;
+  pk: boolean;
+  defaultValue?: string | null;
+}
 
 export default function DatabasePage() {
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
-  const [schema, setSchema] = useState<TableSchema[]>([]);
+  const [columns, setColumns] = useState<ColumnInfo[]>([]);
+  const [columnNames, setColumnNames] = useState<string[]>([]);
   const [data, setData] = useState<Record<string, unknown>[]>([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 25, total: 0, totalPages: 0 });
   const [loading, setLoading] = useState(true);
@@ -39,10 +48,11 @@ export default function DatabasePage() {
     setLoading(true);
     try {
       const [schemaRes, dataRes] = await Promise.all([
-        api.get<{ schema: TableSchema[] }>(`/admin/db/tables/${selectedTable}`),
-        api.get(`/admin/db/query/${selectedTable}?page=${pagination.page}&limit=${pagination.limit}`),
+        api.get<{ columns: ColumnInfo[]; name: string; rowCount: number }>(`/admin/db/tables/${selectedTable}`),
+        api.get<{ columns: string[]; data: Record<string, unknown>[]; pagination: typeof pagination }>(`/admin/db/query/${selectedTable}?page=${pagination.page}&limit=${pagination.limit}`),
       ]);
-      setSchema(schemaRes.data.schema);
+      setColumns(schemaRes.data.columns);
+      setColumnNames(dataRes.data.columns);
       setData(dataRes.data.data);
       setPagination(dataRes.data.pagination);
     } catch (err) {
@@ -100,12 +110,12 @@ export default function DatabasePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {schema.map(col => (
+                  {columns.map(col => (
                     <tr key={col.name}>
                       <td style={{ fontFamily: 'monospace' }}>{col.name}</td>
                       <td>{col.type}</td>
-                      <td>{col.notnull ? 'Yes' : 'No'}</td>
-                      <td className="text-gray">{col.dflt_value ?? '-'}</td>
+                      <td>{col.notNull ? 'Yes' : 'No'}</td>
+                      <td className="text-gray">{col.defaultValue ?? '-'}</td>
                       <td>{col.pk ? 'Yes' : 'No'}</td>
                     </tr>
                   ))}
@@ -137,17 +147,17 @@ export default function DatabasePage() {
                   <table>
                     <thead>
                       <tr>
-                        {schema.map(col => (
-                          <th key={col.name}>{col.name}</th>
+                        {columnNames.map(colName => (
+                          <th key={colName}>{colName}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {data.map((row, idx) => (
                         <tr key={idx}>
-                          {schema.map(col => (
-                            <td key={col.name} style={{ fontFamily: 'monospace', fontSize: '0.875rem', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {formatValue(row[col.name])}
+                          {columnNames.map(colName => (
+                            <td key={colName} style={{ fontFamily: 'monospace', fontSize: '0.875rem', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {formatValue(row[colName])}
                             </td>
                           ))}
                         </tr>

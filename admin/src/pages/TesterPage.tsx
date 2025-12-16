@@ -37,15 +37,17 @@ export default function TesterPage() {
     wsRef.current = ws;
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'subscribe', requestId }));
+      // Subscribe to the otp-requests channel
+      ws.send(JSON.stringify({ type: 'subscribe', channel: 'otp-requests' }));
     };
 
     ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        if (message.type === 'otp_update' && message.data.request_id === requestId) {
+        // Listen for otp-request:updated or otp-request:created events
+        if ((message.type === 'otp-request:updated' || message.type === 'otp-request:created') && message.data.id === requestId) {
           setStatusUpdates(prev => [...prev, { type: 'status', data: message.data }]);
-          if (['completed', 'failed', 'verified', 'expired'].includes(message.data.status)) {
+          if (['delivered', 'failed', 'verified', 'expired', 'rejected'].includes(message.data.status)) {
             ws.close();
           }
         }
@@ -112,11 +114,12 @@ export default function TesterPage() {
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
       pending: 'badge-warning',
-      calling: 'badge-info',
-      answered: 'badge-info',
-      completed: 'badge-success',
+      sending: 'badge-info',
+      sent: 'badge-success',
+      delivered: 'badge-success',
       verified: 'badge-success',
       failed: 'badge-error',
+      rejected: 'badge-error',
       expired: 'badge-gray',
     };
     return colors[status] || 'badge-gray';
@@ -261,9 +264,9 @@ export default function TesterPage() {
                         <span className="text-gray">
                           {new Date(update.data.updated_at).toLocaleTimeString()}
                         </span>
-                        {update.data.failure_reason && (
+                        {update.data.error_message && (
                           <span className="text-error" style={{ marginLeft: '0.5rem' }}>
-                            {update.data.failure_reason}
+                            {update.data.error_message}
                           </span>
                         )}
                       </div>

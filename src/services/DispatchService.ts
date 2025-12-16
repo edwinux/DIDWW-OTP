@@ -10,6 +10,7 @@ import type { IChannelProvider, ChannelType } from '../channels/IChannelProvider
 import { FraudEngine } from './FraudEngine.js';
 import { WebhookService, type WebhookPayload } from './WebhookService.js';
 import { OtpRequestRepository, type OtpStatus } from '../repositories/OtpRequestRepository.js';
+import { getWebSocketServer } from '../admin/websocket.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -134,6 +135,7 @@ export class DispatchService {
 
       // Update status to look like it was sent
       this.otpRepo.updateStatus(requestId, 'sent', { channel: channels[0] });
+      this.broadcastStatusUpdate(requestId, 'sent', channels[0]);
 
       // Send fake webhook (delayed to simulate real delivery)
       if (request.webhookUrl) {
@@ -210,6 +212,7 @@ export class DispatchService {
 
       // Update status to sending
       this.otpRepo.updateStatus(requestId, 'sending', { channel: channelType });
+      this.broadcastStatusUpdate(requestId, 'sending', channelType);
 
       // Attempt send
       const result = await provider.send(request.phone, request.code, requestId);
@@ -220,6 +223,7 @@ export class DispatchService {
           channel: channelType,
           provider_id: result.providerId,
         });
+        this.broadcastStatusUpdate(requestId, 'sent', channelType);
 
         logger.info('OTP delivered', {
           requestId,
@@ -247,6 +251,7 @@ export class DispatchService {
           channel: channelType,
           error_message: result.error,
         });
+        this.broadcastStatusUpdate(requestId, 'failed', channelType);
 
         return {
           success: false,
@@ -262,6 +267,7 @@ export class DispatchService {
     this.otpRepo.updateStatus(requestId, 'failed', {
       error_message: 'All channels failed',
     });
+    this.broadcastStatusUpdate(requestId, 'failed');
 
     logger.error('All channels failed', {
       requestId,
@@ -288,6 +294,7 @@ export class DispatchService {
     // Update request status
     const newStatus: OtpStatus = success ? 'verified' : 'rejected';
     this.otpRepo.updateStatus(requestId, newStatus);
+    this.broadcastStatusUpdate(requestId, newStatus, request.channel || undefined);
 
     // Update fraud engine
     if (success) {
@@ -333,5 +340,24 @@ export class DispatchService {
    */
   private hashCode(code: string): string {
     return crypto.createHash(this.config.codeHashAlgorithm).update(code).digest('hex');
+  }
+
+  /**
+   * Broadcast OTP status update via WebSocket
+   */
+  private broadcastStatusUpdate(requestId: string, status: OtpStatus, channel?: string): void {
+    try {
+      const wsServer = getWebSocketServer();
+      if (wsServer) {
+        wsServer.broadcastOtpUpdate({
+          id: requestId,
+          status,
+          channel,
+          updated_at: Date.now(),
+        });
+      }
+    } catch {
+      // WebSocket might not be initialized yet, ignore
+    }
   }
 }

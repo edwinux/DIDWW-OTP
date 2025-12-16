@@ -1,25 +1,26 @@
 export interface OtpRequest {
-  id: number;
-  request_id: string;
-  phone_number: string;
-  otp_code: string;
-  status: 'pending' | 'calling' | 'answered' | 'completed' | 'failed' | 'verified' | 'expired';
-  channel_id?: string;
-  call_duration?: number;
-  asterisk_call_id?: string;
-  caller_id?: string;
-  voice_speed?: number;
-  repeat_count?: number;
-  language?: string;
-  webhook_url?: string;
-  created_at: string;
-  updated_at: string;
-  verified_at?: string;
-  expires_at?: string;
-  failure_reason?: string;
-  client_ip?: string;
-  fraud_score?: number;
-  fraud_flags?: string;
+  id: string;
+  session_id: string | null;
+  phone: string;
+  phone_prefix: string | null;
+  code_hash: string | null;
+  status: 'pending' | 'sending' | 'sent' | 'delivered' | 'failed' | 'verified' | 'rejected' | 'expired';
+  channel: string | null;
+  channels_requested: string | null;
+  ip_address: string | null;
+  ip_subnet: string | null;
+  asn: number | null;
+  country_code: string | null;
+  phone_country: string | null;
+  fraud_score: number;
+  fraud_reasons: string | null;
+  shadow_banned: number;
+  webhook_url: string | null;
+  provider_id: string | null;
+  error_message: string | null;
+  created_at: number;
+  updated_at: number;
+  expires_at: number | null;
 }
 
 export interface WebhookLog {
