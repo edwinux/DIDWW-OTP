@@ -22,7 +22,7 @@ export default function DatabasePage() {
 
   const fetchTables = async () => {
     try {
-      const response = await api.get<{ tables: TableInfo[] }>('/admin/database/tables');
+      const response = await api.get<{ tables: TableInfo[] }>('/admin/db/tables');
       setTables(response.data.tables);
       if (response.data.tables.length > 0) {
         setSelectedTable(response.data.tables[0].name);
@@ -39,8 +39,8 @@ export default function DatabasePage() {
     setLoading(true);
     try {
       const [schemaRes, dataRes] = await Promise.all([
-        api.get<{ schema: TableSchema[] }>(`/admin/database/tables/${selectedTable}/schema`),
-        api.get(`/admin/database/tables/${selectedTable}/data?page=${pagination.page}&limit=${pagination.limit}`),
+        api.get<{ schema: TableSchema[] }>(`/admin/db/tables/${selectedTable}`),
+        api.get(`/admin/db/query/${selectedTable}?page=${pagination.page}&limit=${pagination.limit}`),
       ]);
       setSchema(schemaRes.data.schema);
       setData(dataRes.data.data);

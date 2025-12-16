@@ -69,7 +69,7 @@ export default function TesterPage() {
     setLoading(true);
 
     try {
-      const response = await api.post<TestOtpResponse>('/admin/tester/send', {
+      const response = await api.post<TestOtpResponse>('/admin/test/send-otp', {
         phone_number: phoneNumber,
         caller_id: callerId || undefined,
         voice_speed: parseFloat(voiceSpeed),
@@ -94,7 +94,7 @@ export default function TesterPage() {
     if (!activeRequest) return;
 
     try {
-      const response = await api.post(`/admin/tester/verify/${activeRequest.requestId}`, {
+      const response = await api.post(`/admin/test/verify/${activeRequest.requestId}`, {
         code: verifyCode,
       });
       setVerifyResult({

@@ -21,7 +21,7 @@ export default function LogsPage() {
       if (filters.phone_number) params.set('phone_number', filters.phone_number);
       if (filters.request_id) params.set('request_id', filters.request_id);
 
-      const response = await api.get<PaginatedResponse<OtpRequest>>(`/admin/logs?${params}`);
+      const response = await api.get<PaginatedResponse<OtpRequest>>(`/admin/logs/otp-requests?${params}`);
       setLogs(response.data.data);
       setPagination(response.data.pagination);
     } catch (err) {

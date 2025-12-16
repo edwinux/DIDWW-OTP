@@ -99,6 +99,10 @@ export function registerAdminRoutes(app: Express, dispatchService: DispatchServi
     testerController.getTestHistory(req, res);
   });
 
+  app.post('/admin/test/verify/:testId', requireAdminAuth, (req: Request, res: Response) => {
+    testerController.verifyTestOtp(req, res);
+  });
+
   // ============================================================================
   // Admin Health Check
   // ============================================================================

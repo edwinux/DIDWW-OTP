@@ -5,6 +5,7 @@
  */
 
 import type { Request, Response } from 'express';
+import crypto from 'crypto';
 import { z } from 'zod';
 import type { DispatchService } from '../../services/DispatchService.js';
 import { OtpRequestRepository } from '../../repositories/OtpRequestRepository.js';
@@ -12,12 +13,16 @@ import { WebhookLogRepository } from '../../repositories/WebhookLogRepository.js
 import { logger } from '../../utils/logger.js';
 
 const sendOtpSchema = z.object({
-  phone: z.string().regex(/^\+?[1-9]\d{9,14}$/, 'Phone must be in E.164 format'),
-  code: z
-    .string()
-    .regex(/^\d{4,8}$/, 'Code must be 4-8 digits')
-    .optional(),
+  phone_number: z.string().min(10, 'Phone number required'),
+  caller_id: z.string().optional(),
+  voice_speed: z.number().optional(),
+  repeat_count: z.number().optional(),
+  language: z.string().optional(),
   channel: z.enum(['sms', 'voice']).optional(),
+});
+
+const verifyOtpSchema = z.object({
+  code: z.string().min(4, 'Code required'),
 });
 
 export class TesterController {
@@ -59,11 +64,11 @@ export class TesterController {
         return;
       }
 
-      const { phone, channel } = validation.data;
-      const code = validation.data.code || this.generateCode();
+      const { phone_number, channel } = validation.data;
+      const code = this.generateCode();
 
       // Normalize phone to E.164
-      const normalizedPhone = phone.startsWith('+') ? phone : `+${phone}`;
+      const normalizedPhone = phone_number.startsWith('+') ? phone_number : `+${phone_number}`;
 
       // Use a test IP that won't trigger fraud detection
       const testIp = '127.0.0.1';
@@ -83,14 +88,18 @@ export class TesterController {
         ip: testIp,
       });
 
+      // Calculate expiration (5 minutes from now)
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
       res.json({
         success: result.success,
-        testId: result.requestId,
-        phone: normalizedPhone,
-        code, // Return the code for testing (wouldn't do this in production API)
-        status: result.status,
-        channel: result.channel,
-        message: result.message,
+        data: {
+          requestId: result.requestId,
+          phoneNumber: normalizedPhone,
+          otpCode: code,
+          status: result.status,
+          expiresAt,
+        },
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -150,6 +159,60 @@ export class TesterController {
       res.status(500).json({
         error: 'internal_error',
         message: 'Failed to fetch test status',
+      });
+    }
+  }
+
+  /**
+   * POST /admin/test/verify/:testId
+   * Verify OTP code for a test request
+   */
+  async verifyTestOtp(req: Request, res: Response): Promise<void> {
+    try {
+      const { testId } = req.params;
+      const validation = verifyOtpSchema.safeParse(req.body);
+
+      if (!validation.success) {
+        res.status(400).json({
+          success: false,
+          error: validation.error.issues.map((i) => i.message).join(', '),
+        });
+        return;
+      }
+
+      const { code } = validation.data;
+      const request = this.otpRepo.findById(testId);
+
+      if (!request) {
+        res.status(404).json({
+          success: false,
+          error: 'Request not found',
+        });
+        return;
+      }
+
+      // Hash the input code and compare (using sha256 like DispatchService)
+      const codeHash = crypto.createHash('sha256').update(code).digest('hex');
+
+      if (request.code_hash === codeHash) {
+        // Update status to verified
+        this.otpRepo.updateStatus(testId, 'verified');
+        res.json({
+          success: true,
+          message: 'OTP verified successfully',
+        });
+      } else {
+        res.json({
+          success: false,
+          error: 'Invalid OTP code',
+        });
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error('Failed to verify test OTP', { error: errorMessage });
+      res.status(500).json({
+        success: false,
+        error: 'Failed to verify OTP',
       });
     }
   }
