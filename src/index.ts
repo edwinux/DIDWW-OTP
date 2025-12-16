@@ -12,6 +12,7 @@ import { OtpRequestRepository, FraudRulesRepository, WebhookLogRepository } from
 import { SmsChannelProvider, VoiceChannelProvider } from './channels/index.js';
 import { FraudEngine, WebhookService, DispatchService } from './services/index.js';
 import { createServer } from './server.js';
+import { startAdminServer } from './admin/index.js';
 import { logger } from './utils/logger.js';
 
 async function main(): Promise<void> {
@@ -118,6 +119,9 @@ async function main(): Promise<void> {
     app.listen(port, () => {
       logger.info(`HTTP server listening on port ${port}`);
     });
+
+    // Start admin server if enabled
+    startAdminServer(dispatchService);
 
     logger.info('Gateway ready', {
       channels: channelProviders.map((p) => p.channelType),

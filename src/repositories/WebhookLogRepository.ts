@@ -104,4 +104,25 @@ export class WebhookLogRepository {
     const result = stmt.run(cutoff);
     return result.changes;
   }
+
+  /**
+   * Find all webhook logs with pagination
+   */
+  findAllPaginated(limit: number = 25, offset: number = 0): WebhookLog[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM webhook_logs
+      ORDER BY sent_at DESC
+      LIMIT ? OFFSET ?
+    `);
+    return stmt.all(limit, offset) as WebhookLog[];
+  }
+
+  /**
+   * Count all webhook logs
+   */
+  countAll(): number {
+    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM webhook_logs');
+    const result = stmt.get() as { count: number };
+    return result.count;
+  }
 }

@@ -2,7 +2,7 @@
 # DIDWW Voice OTP Gateway - Multi-stage Docker Build
 # =============================================================================
 
-# Stage 1: Build TypeScript
+# Stage 1: Build backend TypeScript
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json tsconfig.json ./
@@ -12,7 +12,16 @@ RUN npm run build \
     && npm prune --production \
     && rm -rf /root/.npm
 
-# Stage 2: Production runtime with Asterisk
+# Stage 2: Build admin frontend
+FROM node:20-alpine AS admin-builder
+WORKDIR /app/admin
+COPY admin/package*.json admin/tsconfig.json admin/vite.config.ts admin/index.html ./
+RUN npm ci
+COPY admin/src/ ./src/
+RUN npm run build \
+    && rm -rf node_modules /root/.npm
+
+# Stage 3: Production runtime with Asterisk
 FROM alpine:3.19
 
 # Install runtime dependencies including PicoTTS
@@ -39,6 +48,9 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
 
+# Copy admin frontend build
+COPY --from=admin-builder /app/admin/dist ./admin/dist
+
 # Copy Asterisk config templates
 COPY src/config/templates /etc/asterisk/templates
 
@@ -47,10 +59,11 @@ COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # Expose ports
+# 80   - Admin UI (HTTP)
 # 8080 - HTTP API
 # 5060 - SIP signaling (UDP)
 # 10000-10020 - RTP media (UDP)
-EXPOSE 8080 5060/udp 10000-10020/udp
+EXPOSE 80 8080 5060/udp 10000-10020/udp
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

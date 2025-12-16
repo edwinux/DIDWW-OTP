@@ -109,6 +109,17 @@ const configSchema = z.object({
     timeout: z.coerce.number().int().min(1000).max(30000).default(5000),
     maxRetries: z.coerce.number().int().min(1).max(5).default(3),
   }),
+
+  // Admin UI configuration
+  admin: z.object({
+    enabled: z.coerce.boolean().default(false),
+    username: z.string().min(1).default('admin'),
+    password: z.string().min(8).optional(),
+    sessionSecret: z.string().min(16).optional(),
+    ipWhitelist: z.string().optional(), // Comma-separated IPs or CIDR ranges
+    sessionTtlMinutes: z.coerce.number().int().min(5).max(10080).default(480), // 8 hours default
+    port: z.coerce.number().int().min(1).max(65535).default(80),
+  }),
 });
 
 /**
@@ -181,6 +192,15 @@ function parseEnvVars(): Record<string, unknown> {
       timeout: process.env.WEBHOOK_TIMEOUT,
       maxRetries: process.env.WEBHOOK_MAX_RETRIES,
     },
+    admin: {
+      enabled: process.env.ADMIN_ENABLED,
+      username: process.env.ADMIN_USERNAME,
+      password: process.env.ADMIN_PASSWORD,
+      sessionSecret: process.env.ADMIN_SESSION_SECRET,
+      ipWhitelist: process.env.ADMIN_IP_WHITELIST,
+      sessionTtlMinutes: process.env.ADMIN_SESSION_TTL,
+      port: process.env.ADMIN_PORT,
+    },
   };
 }
 
@@ -228,6 +248,11 @@ function maskSecrets(config: Config): Record<string, unknown> {
     fraud: config.fraud,
     channels: config.channels,
     webhooks: config.webhooks,
+    admin: {
+      ...config.admin,
+      password: config.admin.password ? '***MASKED***' : undefined,
+      sessionSecret: config.admin.sessionSecret ? '***MASKED***' : undefined,
+    },
   };
 }
 

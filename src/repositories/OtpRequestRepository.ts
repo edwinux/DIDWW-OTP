@@ -218,4 +218,143 @@ export class OtpRequestRepository {
     const result = stmt.run(cutoff);
     return result.changes;
   }
+
+  /**
+   * Filter options for paginated queries
+   */
+  buildWhereClause(filters: {
+    status?: string;
+    channel?: string;
+    phone?: string;
+    ip_address?: string;
+    country_code?: string;
+    shadow_banned?: boolean;
+    fraud_score_min?: number;
+    fraud_score_max?: number;
+    date_from?: number;
+    date_to?: number;
+  }): { where: string; params: (string | number)[] } {
+    const conditions: string[] = [];
+    const params: (string | number)[] = [];
+
+    if (filters.status) {
+      conditions.push('status = ?');
+      params.push(filters.status);
+    }
+    if (filters.channel) {
+      conditions.push('channel = ?');
+      params.push(filters.channel);
+    }
+    if (filters.phone) {
+      conditions.push('phone LIKE ?');
+      params.push(`%${filters.phone}%`);
+    }
+    if (filters.ip_address) {
+      conditions.push('(ip_address LIKE ? OR ip_subnet LIKE ?)');
+      params.push(`%${filters.ip_address}%`, `%${filters.ip_address}%`);
+    }
+    if (filters.country_code) {
+      conditions.push('country_code = ?');
+      params.push(filters.country_code);
+    }
+    if (filters.shadow_banned !== undefined) {
+      conditions.push('shadow_banned = ?');
+      params.push(filters.shadow_banned ? 1 : 0);
+    }
+    if (filters.fraud_score_min !== undefined) {
+      conditions.push('fraud_score >= ?');
+      params.push(filters.fraud_score_min);
+    }
+    if (filters.fraud_score_max !== undefined) {
+      conditions.push('fraud_score <= ?');
+      params.push(filters.fraud_score_max);
+    }
+    if (filters.date_from !== undefined) {
+      conditions.push('created_at >= ?');
+      params.push(filters.date_from);
+    }
+    if (filters.date_to !== undefined) {
+      conditions.push('created_at <= ?');
+      params.push(filters.date_to);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    return { where, params };
+  }
+
+  /**
+   * Find all OTP requests with pagination and filters
+   */
+  findAllPaginated(
+    filters: {
+      status?: string;
+      channel?: string;
+      phone?: string;
+      ip_address?: string;
+      country_code?: string;
+      shadow_banned?: boolean;
+      fraud_score_min?: number;
+      fraud_score_max?: number;
+      date_from?: number;
+      date_to?: number;
+    },
+    limit: number = 25,
+    offset: number = 0,
+    sortBy: string = 'created_at',
+    sortOrder: 'asc' | 'desc' = 'desc'
+  ): OtpRequest[] {
+    const { where, params } = this.buildWhereClause(filters);
+
+    // Whitelist valid sort columns to prevent SQL injection
+    const validSortColumns = ['created_at', 'updated_at', 'status', 'phone', 'fraud_score', 'channel'];
+    const safeSort = validSortColumns.includes(sortBy) ? sortBy : 'created_at';
+    const safeOrder = sortOrder === 'asc' ? 'ASC' : 'DESC';
+
+    const sql = `
+      SELECT * FROM otp_requests
+      ${where}
+      ORDER BY ${safeSort} ${safeOrder}
+      LIMIT ? OFFSET ?
+    `;
+
+    const stmt = this.db.prepare(sql);
+    return stmt.all(...params, limit, offset) as OtpRequest[];
+  }
+
+  /**
+   * Count OTP requests with filters
+   */
+  countFiltered(filters: {
+    status?: string;
+    channel?: string;
+    phone?: string;
+    ip_address?: string;
+    country_code?: string;
+    shadow_banned?: boolean;
+    fraud_score_min?: number;
+    fraud_score_max?: number;
+    date_from?: number;
+    date_to?: number;
+  }): number {
+    const { where, params } = this.buildWhereClause(filters);
+
+    const sql = `SELECT COUNT(*) as count FROM otp_requests ${where}`;
+    const stmt = this.db.prepare(sql);
+    const result = stmt.get(...params) as { count: number };
+    return result.count;
+  }
+
+  /**
+   * Get distinct values for a column (for filter dropdowns)
+   */
+  getDistinctValues(column: 'status' | 'channel' | 'country_code'): string[] {
+    const validColumns = ['status', 'channel', 'country_code'];
+    if (!validColumns.includes(column)) {
+      return [];
+    }
+
+    const stmt = this.db.prepare(`SELECT DISTINCT ${column} FROM otp_requests WHERE ${column} IS NOT NULL`);
+    const results = stmt.all() as Record<string, string>[];
+    return results.map((r) => r[column]);
+  }
 }
