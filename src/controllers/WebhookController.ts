@@ -19,13 +19,21 @@ const authFeedbackSchema = z.object({
 
 /**
  * DLR (Delivery Report) callback schema for DIDWW
+ * Supports both outbound_message_callbacks and dlr_event types
  */
 const dlrCallbackSchema = z.object({
   data: z.object({
     id: z.string(),
-    type: z.literal('outbound_messages'),
+    type: z.enum(['outbound_message_callbacks', 'dlr_event', 'outbound_messages']),
     attributes: z.object({
       status: z.string(),
+      source: z.string().optional(),
+      destination: z.string().optional(),
+      time_start: z.string().optional(),
+      end_time: z.string().optional(),
+      fragments_sent: z.number().optional(),
+      price: z.number().optional(),
+      code_id: z.string().nullable().optional(),
       error_code: z.string().optional(),
       error_message: z.string().optional(),
     }),
