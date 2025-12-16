@@ -7,6 +7,8 @@
 
 import { OtpEventRepository, type ChannelEventType } from '../repositories/OtpEventRepository.js';
 import { OtpRequestRepository, type OtpStatus } from '../repositories/OtpRequestRepository.js';
+import { WebhookLogRepository } from '../repositories/WebhookLogRepository.js';
+import { WebhookService } from './WebhookService.js';
 import { getWebSocketServer } from '../admin/websocket.js';
 import { logger } from '../utils/logger.js';
 
@@ -46,10 +48,12 @@ let instance: OtpEventService | null = null;
 export class OtpEventService {
   private eventRepo: OtpEventRepository;
   private otpRepo: OtpRequestRepository;
+  private webhookService: WebhookService;
 
   constructor() {
     this.eventRepo = new OtpEventRepository();
     this.otpRepo = new OtpRequestRepository();
+    this.webhookService = new WebhookService(new WebhookLogRepository());
   }
 
   /**
@@ -89,6 +93,9 @@ export class OtpEventService {
 
       // Broadcast via WebSocket
       this.broadcastEvent(requestId, channel, eventType, eventData);
+
+      // Send HTTP webhook if configured
+      this.sendEventWebhook(requestId, channel, eventType, eventData, newStatus);
 
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -161,6 +168,31 @@ export class OtpEventService {
       event_type: eventType,
       event_data: eventData,
       timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * Send HTTP webhook for granular events
+   */
+  private sendEventWebhook(
+    requestId: string,
+    channel: string,
+    eventType: string,
+    eventData?: Record<string, unknown>,
+    status?: OtpStatus
+  ): void {
+    const request = this.otpRepo.findById(requestId);
+    if (!request?.webhook_url) return;
+
+    this.webhookService.notify(request.webhook_url, {
+      event: `otp.${eventType}`,
+      request_id: requestId,
+      session_id: request.session_id || undefined,
+      phone: request.phone,
+      status: status || 'sending',
+      channel,
+      timestamp: Date.now(),
+      metadata: eventData,
     });
   }
 
