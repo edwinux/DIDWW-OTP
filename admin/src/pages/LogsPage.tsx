@@ -1,6 +1,83 @@
 import { useState, useEffect, useCallback } from 'react';
-import api from '../services/api';
-import type { OtpRequest, PaginatedResponse, FilterValues } from '../types';
+import { ColumnDef } from '@tanstack/react-table';
+import api from '@/services/api';
+import type { OtpRequest, PaginatedResponse, FilterValues } from '@/types';
+import { DataTable, StatusBadge, RiskScoreBar, LogDetailDrawer } from '@/components/logs';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { ChevronLeft, ChevronRight, Search, Phone, MessageSquare, RefreshCw } from 'lucide-react';
+
+const columns: ColumnDef<OtpRequest>[] = [
+  {
+    accessorKey: 'id',
+    header: 'ID',
+    cell: ({ row }) => (
+      <span className="font-mono text-xs text-muted-foreground">
+        {row.original.id.substring(0, 8)}...
+      </span>
+    ),
+  },
+  {
+    accessorKey: 'phone',
+    header: 'Phone',
+    cell: ({ row }) => (
+      <span className="font-mono">{row.original.phone}</span>
+    ),
+  },
+  {
+    accessorKey: 'status',
+    header: 'Status',
+    cell: ({ row }) => <StatusBadge status={row.original.status} />,
+  },
+  {
+    accessorKey: 'channel',
+    header: 'Channel',
+    cell: ({ row }) => {
+      const channel = row.original.channel;
+      if (!channel) return <span className="text-muted-foreground">-</span>;
+      return (
+        <div className="flex items-center gap-1.5 text-sm">
+          {channel === 'sms' ? (
+            <MessageSquare className="h-3.5 w-3.5 text-primary" />
+          ) : (
+            <Phone className="h-3.5 w-3.5 text-violet-400" />
+          )}
+          <span className="capitalize">{channel}</span>
+        </div>
+      );
+    },
+  },
+  {
+    accessorKey: 'fraud_score',
+    header: 'Risk Score',
+    cell: ({ row }) => <RiskScoreBar score={row.original.fraud_score} />,
+  },
+  {
+    accessorKey: 'country_code',
+    header: 'Country',
+    cell: ({ row }) => (
+      <span className="text-sm">{row.original.country_code || '-'}</span>
+    ),
+  },
+  {
+    accessorKey: 'created_at',
+    header: 'Created',
+    cell: ({ row }) => (
+      <span className="font-mono text-xs text-muted-foreground">
+        {new Date(row.original.created_at).toLocaleString()}
+      </span>
+    ),
+  },
+];
 
 export default function LogsPage() {
   const [logs, setLogs] = useState<OtpRequest[]>([]);
@@ -17,7 +94,7 @@ export default function LogsPage() {
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
       });
-      if (filters.status) params.set('status', filters.status);
+      if (filters.status && filters.status !== 'all') params.set('status', filters.status);
       if (filters.phone) params.set('phone', filters.phone);
       if (filters.id) params.set('id', filters.id);
 
@@ -44,193 +121,140 @@ export default function LogsPage() {
     setPagination(prev => ({ ...prev, page: 1 }));
   };
 
-  const statusColors: Record<string, string> = {
-    delivered: 'badge-success',
-    verified: 'badge-success',
-    sent: 'badge-success',
-    pending: 'badge-warning',
-    sending: 'badge-info',
-    failed: 'badge-error',
-    rejected: 'badge-error',
-    expired: 'badge-gray',
-  };
+  const startRecord = (pagination.page - 1) * pagination.limit + 1;
+  const endRecord = Math.min(pagination.page * pagination.limit, pagination.total);
 
   return (
-    <div>
-      <h2 style={{ marginBottom: '1.5rem' }}>OTP Logs</h2>
-
-      <div className="card">
-        <div className="filters">
-          <div className="filter-group">
-            <label className="form-label">Status</label>
-            <select
-              className="form-select"
-              value={filters.status}
-              onChange={(e) => handleFilterChange('status', e.target.value)}
-            >
-              <option value="">All Statuses</option>
-              {filterValues.statuses.map(s => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </div>
-          <div className="filter-group">
-            <label className="form-label">Phone Number</label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="Filter by phone..."
-              value={filters.phone}
-              onChange={(e) => handleFilterChange('phone', e.target.value)}
-            />
-          </div>
-          <div className="filter-group">
-            <label className="form-label">Request ID</label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="Filter by ID..."
-              value={filters.id}
-              onChange={(e) => handleFilterChange('id', e.target.value)}
-            />
-          </div>
-          <div className="filter-group">
-            <label className="form-label">Per Page</label>
-            <select
-              className="form-select"
-              value={pagination.limit}
-              onChange={(e) => setPagination(prev => ({ ...prev, limit: parseInt(e.target.value), page: 1 }))}
-            >
-              <option value="25">25</option>
-              <option value="50">50</option>
-              <option value="100">100</option>
-              <option value="250">250</option>
-              <option value="500">500</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <div className="card">
-        {loading ? (
-          <div className="loading"><div className="spinner" /></div>
-        ) : (
-          <>
-            <div className="table-container">
-              <table>
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Phone</th>
-                    <th>Status</th>
-                    <th>Channel</th>
-                    <th>Fraud Score</th>
-                    <th>Country</th>
-                    <th>Created</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {logs.map(log => (
-                    <tr key={log.id}>
-                      <td className="text-sm" style={{ fontFamily: 'monospace' }}>
-                        {log.id.substring(0, 8)}...
-                      </td>
-                      <td>{log.phone}</td>
-                      <td>
-                        <span className={`badge ${statusColors[log.status] || 'badge-gray'}`}>
-                          {log.status}
-                        </span>
-                      </td>
-                      <td>{log.channel || '-'}</td>
-                      <td>
-                        <span className={log.fraud_score > 50 ? 'text-error' : log.fraud_score > 25 ? 'text-warning' : 'text-success'}>
-                          {log.fraud_score}
-                        </span>
-                      </td>
-                      <td>{log.country_code || '-'}</td>
-                      <td className="text-sm">{new Date(log.created_at).toLocaleString()}</td>
-                      <td>
-                        <button
-                          className="btn btn-sm btn-secondary"
-                          onClick={() => setSelectedLog(log)}
-                        >
-                          Details
-                        </button>
-                      </td>
-                    </tr>
+    <div className="space-y-4">
+      {/* Filters */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="status-filter">Status</Label>
+              <Select
+                value={filters.status || 'all'}
+                onValueChange={(value) => handleFilterChange('status', value)}
+              >
+                <SelectTrigger id="status-filter" className="w-[150px]">
+                  <SelectValue placeholder="All Statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  {filterValues.statuses.map(s => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
                   ))}
-                </tbody>
-              </table>
+                </SelectContent>
+              </Select>
             </div>
 
-            <div className="pagination">
-              <div className="pagination-info">
-                Showing {((pagination.page - 1) * pagination.limit) + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} entries
-              </div>
-              <div className="pagination-buttons">
-                <button
-                  className="btn btn-sm btn-secondary"
-                  disabled={pagination.page <= 1}
-                  onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
-                >
-                  Previous
-                </button>
-                <span className="text-sm" style={{ padding: '0 1rem' }}>
-                  Page {pagination.page} of {pagination.totalPages}
-                </span>
-                <button
-                  className="btn btn-sm btn-secondary"
-                  disabled={pagination.page >= pagination.totalPages}
-                  onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
-                >
-                  Next
-                </button>
+            <div className="space-y-2">
+              <Label htmlFor="phone-filter">Phone Number</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="phone-filter"
+                  placeholder="Filter by phone..."
+                  className="pl-9 w-[180px]"
+                  value={filters.phone}
+                  onChange={(e) => handleFilterChange('phone', e.target.value)}
+                />
               </div>
             </div>
-          </>
-        )}
-      </div>
 
-      {selectedLog && (
-        <LogDetailModal log={selectedLog} onClose={() => setSelectedLog(null)} />
-      )}
-    </div>
-  );
-}
+            <div className="space-y-2">
+              <Label htmlFor="id-filter">Request ID</Label>
+              <Input
+                id="id-filter"
+                placeholder="Filter by ID..."
+                className="w-[180px] font-mono"
+                value={filters.id}
+                onChange={(e) => handleFilterChange('id', e.target.value)}
+              />
+            </div>
 
-function LogDetailModal({ log, onClose }: { log: OtpRequest; onClose: () => void }) {
-  return (
-    <div style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      background: 'rgba(0,0,0,0.5)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 1000,
-    }} onClick={onClose}>
-      <div className="card" style={{ maxWidth: '600px', width: '90%', maxHeight: '80vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
-        <div className="card-header">
-          <h3 className="card-title">Request Details</h3>
-          <button className="btn btn-sm btn-secondary" onClick={onClose}>Close</button>
+            <div className="space-y-2">
+              <Label htmlFor="limit-select">Per Page</Label>
+              <Select
+                value={pagination.limit.toString()}
+                onValueChange={(value) => setPagination(prev => ({ ...prev, limit: parseInt(value), page: 1 }))}
+              >
+                <SelectTrigger id="limit-select" className="w-[100px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="25">25</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                  <SelectItem value="250">250</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={fetchLogs}
+              disabled={loading}
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Data Table */}
+      <Card>
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+            </div>
+          ) : (
+            <DataTable
+              columns={columns}
+              data={logs}
+              onRowClick={(row) => setSelectedLog(row)}
+            />
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Pagination */}
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Showing {startRecord} to {endRecord} of {pagination.total} entries
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pagination.page <= 1}
+            onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
+          >
+            <ChevronLeft className="h-4 w-4 mr-1" />
+            Previous
+          </Button>
+          <span className="text-sm text-muted-foreground px-2">
+            Page {pagination.page} of {pagination.totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pagination.page >= pagination.totalPages}
+            onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
+          >
+            Next
+            <ChevronRight className="h-4 w-4 ml-1" />
+          </Button>
         </div>
-        <table>
-          <tbody>
-            {Object.entries(log).map(([key, value]) => (
-              <tr key={key}>
-                <td style={{ fontWeight: 500, width: '40%' }}>{key}</td>
-                <td style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                  {value === null ? <span className="text-gray">null</span> : String(value)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
+
+      {/* Detail Drawer */}
+      <LogDetailDrawer
+        log={selectedLog}
+        onClose={() => setSelectedLog(null)}
+      />
     </div>
   );
 }

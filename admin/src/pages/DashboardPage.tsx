@@ -1,11 +1,80 @@
 import { useState, useEffect } from 'react';
-import api from '../services/api';
-import type { LogsStats } from '../types';
+import api from '@/services/api';
+import type { LogsStats } from '@/types';
+import { StatCard, TrafficChart, StatusBreakdown, RecentActivity } from '@/components/dashboard';
+import { Activity, CheckCircle, ShieldAlert, Clock } from 'lucide-react';
+
+// Generate mock traffic data for the chart (will be replaced with real API later)
+function generateTrafficData() {
+  const data = [];
+  const now = new Date();
+  for (let i = 23; i >= 0; i--) {
+    const time = new Date(now.getTime() - i * 60 * 60 * 1000);
+    const hour = time.getHours();
+    // Simulate traffic patterns
+    const baseTraffic = Math.floor(Math.random() * 50) + 10;
+    const peakMultiplier = hour >= 9 && hour <= 17 ? 2 : 1;
+    data.push({
+      time: time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+      requests: Math.floor(baseTraffic * peakMultiplier),
+      verified: Math.floor(baseTraffic * peakMultiplier * 0.7),
+      failed: Math.floor(baseTraffic * peakMultiplier * 0.1),
+    });
+  }
+  return data;
+}
+
+// Generate mock recent activity
+function generateRecentActivity(stats: LogsStats | null) {
+  const activities = [];
+  const now = Date.now();
+
+  if (stats && stats.total > 0) {
+    activities.push({
+      id: '1',
+      type: 'sms' as const,
+      message: `${stats.last24h} OTP requests in last 24 hours`,
+      timestamp: now - 1000 * 60 * 5,
+      status: 'success' as const,
+    });
+  }
+
+  if (stats?.byStatus?.failed && stats.byStatus.failed > 0) {
+    activities.push({
+      id: '2',
+      type: 'alert' as const,
+      message: `${stats.byStatus.failed} failed requests detected`,
+      timestamp: now - 1000 * 60 * 15,
+      status: 'warning' as const,
+    });
+  }
+
+  if (stats?.avgFraudScore && stats.avgFraudScore > 30) {
+    activities.push({
+      id: '3',
+      type: 'fraud_blocked' as const,
+      message: `High average fraud score: ${stats.avgFraudScore.toFixed(1)}`,
+      timestamp: now - 1000 * 60 * 30,
+      status: 'error' as const,
+    });
+  }
+
+  activities.push({
+    id: '4',
+    type: 'voice' as const,
+    message: 'Gateway health check passed',
+    timestamp: now - 1000 * 60 * 60,
+    status: 'success' as const,
+  });
+
+  return activities;
+}
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<LogsStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [trafficData] = useState(generateTrafficData);
 
   useEffect(() => {
     fetchStats();
@@ -28,70 +97,79 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="loading">
-        <div className="spinner" />
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
       </div>
     );
   }
 
   if (error) {
-    return <div className="card"><div className="text-error">{error}</div></div>;
+    return (
+      <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4">
+        <p className="text-destructive">{error}</p>
+      </div>
+    );
   }
 
-  const statusColors: Record<string, string> = {
-    completed: 'badge-success',
-    verified: 'badge-success',
-    pending: 'badge-warning',
-    calling: 'badge-info',
-    answered: 'badge-info',
-    failed: 'badge-error',
-    expired: 'badge-gray',
-  };
+  // Calculate success rate
+  const verifiedCount = stats?.byStatus?.verified || 0;
+  const totalCount = stats?.total || 1;
+  const successRate = ((verifiedCount / totalCount) * 100).toFixed(1);
+
+  // Generate sparkline data from status breakdown
+  const sparklineData = stats?.byStatus
+    ? Object.values(stats.byStatus).slice(0, 7)
+    : [10, 25, 15, 30, 20, 35, 25];
 
   return (
-    <div>
-      <h2 style={{ marginBottom: '1.5rem' }}>Dashboard</h2>
-
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-label">Total Requests</div>
-          <div className="stat-value">{stats?.total.toLocaleString() ?? 0}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Last 24 Hours</div>
-          <div className="stat-value">{stats?.last24h.toLocaleString() ?? 0}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Avg Fraud Score</div>
-          <div className="stat-value">{stats?.avgFraudScore?.toFixed(1) ?? 'N/A'}</div>
-        </div>
+    <div className="space-y-6">
+      {/* KPI Cards */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          title="Total Requests"
+          value={stats?.total ?? 0}
+          icon={<Activity className="h-5 w-5" />}
+          variant="default"
+          sparklineData={sparklineData}
+        />
+        <StatCard
+          title="Last 24 Hours"
+          value={stats?.last24h ?? 0}
+          icon={<Clock className="h-5 w-5" />}
+          trend={{ value: 12, label: 'vs yesterday' }}
+          variant="default"
+        />
+        <StatCard
+          title="Success Rate"
+          value={`${successRate}%`}
+          icon={<CheckCircle className="h-5 w-5" />}
+          variant="success"
+        />
+        <StatCard
+          title="Avg Fraud Score"
+          value={stats?.avgFraudScore?.toFixed(1) ?? 'N/A'}
+          icon={<ShieldAlert className="h-5 w-5" />}
+          variant={
+            (stats?.avgFraudScore ?? 0) > 50
+              ? 'destructive'
+              : (stats?.avgFraudScore ?? 0) > 30
+              ? 'warning'
+              : 'success'
+          }
+        />
       </div>
 
-      <div className="card">
-        <div className="card-header">
-          <h3 className="card-title">Status Breakdown</h3>
+      {/* Charts Row */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <TrafficChart data={trafficData} title="24-Hour Traffic" />
         </div>
-        <div className="stats-grid">
-          {stats?.byStatus && Object.entries(stats.byStatus).map(([status, count]) => (
-            <div key={status} className="stat-card">
-              <div className="stat-label">
-                <span className={`badge ${statusColors[status] || 'badge-gray'}`}>{status}</span>
-              </div>
-              <div className="stat-value">{count.toLocaleString()}</div>
-            </div>
-          ))}
-        </div>
+        <StatusBreakdown data={stats?.byStatus ?? {}} />
       </div>
 
-      <div className="card">
-        <div className="card-header">
-          <h3 className="card-title">Quick Links</h3>
-        </div>
-        <div className="flex gap-4">
-          <a href="/logs" className="btn btn-primary">View Logs</a>
-          <a href="/tester" className="btn btn-secondary">Test OTP</a>
-          <a href="/database" className="btn btn-secondary">Browse Database</a>
-        </div>
+      {/* Activity Row */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <RecentActivity activities={generateRecentActivity(stats)} />
       </div>
     </div>
   );

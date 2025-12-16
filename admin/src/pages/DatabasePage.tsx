@@ -1,6 +1,27 @@
 import { useState, useEffect } from 'react';
-import api from '../services/api';
-import type { TableInfo } from '../types';
+import api from '@/services/api';
+import type { TableInfo } from '@/types';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Database, Table2, Key, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface ColumnInfo {
   name: string;
@@ -68,132 +89,203 @@ export default function DatabasePage() {
     return String(value);
   };
 
-  return (
-    <div>
-      <h2 style={{ marginBottom: '1.5rem' }}>Database Browser</h2>
+  const startRecord = (pagination.page - 1) * pagination.limit + 1;
+  const endRecord = Math.min(pagination.page * pagination.limit, pagination.total);
 
-      <div className="card">
-        <div className="card-header">
-          <h3 className="card-title">Tables</h3>
-        </div>
-        <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
-          {tables.map(table => (
-            <button
-              key={table.name}
-              className={`btn ${selectedTable === table.name ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => {
-                setSelectedTable(table.name);
-                setPagination(prev => ({ ...prev, page: 1 }));
-              }}
-            >
-              {table.name} ({table.rowCount})
-            </button>
-          ))}
-        </div>
-      </div>
+  return (
+    <div className="space-y-4">
+      {/* Table Selector */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Database className="h-5 w-5 text-primary" />
+            Database Tables
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2">
+            {tables.map(table => (
+              <Button
+                key={table.name}
+                variant={selectedTable === table.name ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => {
+                  setSelectedTable(table.name);
+                  setPagination(prev => ({ ...prev, page: 1 }));
+                }}
+                className="flex items-center gap-2"
+              >
+                <Table2 className="h-4 w-4" />
+                {table.name}
+                <Badge variant="secondary" className="ml-1 text-xs">
+                  {table.rowCount}
+                </Badge>
+              </Button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       {selectedTable && (
-        <>
-          <div className="card">
-            <div className="card-header">
-              <h3 className="card-title">Schema: {selectedTable}</h3>
-            </div>
-            <div className="table-container">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Column</th>
-                    <th>Type</th>
-                    <th>Not Null</th>
-                    <th>Default</th>
-                    <th>Primary Key</th>
-                  </tr>
-                </thead>
-                <tbody>
+        <div className="grid gap-4 lg:grid-cols-3">
+          {/* Schema Card */}
+          <Card className="lg:col-span-1">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Key className="h-4 w-4 text-muted-foreground" />
+                Schema
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <ScrollArea className="h-[400px]">
+                <div className="p-4 pt-0 space-y-2">
                   {columns.map(col => (
-                    <tr key={col.name}>
-                      <td style={{ fontFamily: 'monospace' }}>{col.name}</td>
-                      <td>{col.type}</td>
-                      <td>{col.notNull ? 'Yes' : 'No'}</td>
-                      <td className="text-gray">{col.defaultValue ?? '-'}</td>
-                      <td>{col.pk ? 'Yes' : 'No'}</td>
-                    </tr>
+                    <div
+                      key={col.name}
+                      className={cn(
+                        'p-3 rounded-lg border',
+                        col.pk && 'border-primary/50 bg-primary/5'
+                      )}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-mono text-sm font-medium">{col.name}</span>
+                        {col.pk && (
+                          <Badge variant="default" className="text-xs">PK</Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Badge variant="outline" className="font-mono">
+                          {col.type}
+                        </Badge>
+                        {col.notNull && (
+                          <Badge variant="muted">NOT NULL</Badge>
+                        )}
+                        {col.defaultValue && (
+                          <span className="truncate">= {col.defaultValue}</span>
+                        )}
+                      </div>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
 
-          <div className="card">
-            <div className="card-header">
-              <h3 className="card-title">Data</h3>
-              <select
-                className="form-select"
-                style={{ width: 'auto' }}
-                value={pagination.limit}
-                onChange={(e) => setPagination(prev => ({ ...prev, limit: parseInt(e.target.value), page: 1 }))}
-              >
-                <option value="25">25 rows</option>
-                <option value="50">50 rows</option>
-                <option value="100">100 rows</option>
-              </select>
-            </div>
-
-            {loading ? (
-              <div className="loading"><div className="spinner" /></div>
-            ) : (
-              <>
-                <div className="table-container">
-                  <table>
-                    <thead>
-                      <tr>
-                        {columnNames.map(colName => (
-                          <th key={colName}>{colName}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.map((row, idx) => (
-                        <tr key={idx}>
-                          {columnNames.map(colName => (
-                            <td key={colName} style={{ fontFamily: 'monospace', fontSize: '0.875rem', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {formatValue(row[colName])}
-                            </td>
+          {/* Data Card */}
+          <Card className="lg:col-span-2">
+            <CardHeader className="pb-3 flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-base">Data</CardTitle>
+              <div className="flex items-center gap-2">
+                <Select
+                  value={pagination.limit.toString()}
+                  onValueChange={(value) => setPagination(prev => ({ ...prev, limit: parseInt(value), page: 1 }))}
+                >
+                  <SelectTrigger className="w-[100px] h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="25">25 rows</SelectItem>
+                    <SelectItem value="50">50 rows</SelectItem>
+                    <SelectItem value="100">100 rows</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={fetchTableData}
+                  disabled={loading}
+                >
+                  <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {loading ? (
+                <div className="flex items-center justify-center h-64">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+                </div>
+              ) : (
+                <>
+                  <ScrollArea className="h-[400px]">
+                    <div className="min-w-max">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            {columnNames.map(colName => (
+                              <TableHead key={colName} className="font-mono text-xs whitespace-nowrap">
+                                {colName}
+                              </TableHead>
+                            ))}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {data.map((row, idx) => (
+                            <TableRow key={idx}>
+                              {columnNames.map(colName => (
+                                <TableCell
+                                  key={colName}
+                                  className="font-mono text-xs max-w-[200px] truncate"
+                                  title={formatValue(row[colName])}
+                                >
+                                  {row[colName] === null ? (
+                                    <span className="text-muted-foreground italic">NULL</span>
+                                  ) : (
+                                    formatValue(row[colName])
+                                  )}
+                                </TableCell>
+                              ))}
+                            </TableRow>
                           ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                          {data.length === 0 && (
+                            <TableRow>
+                              <TableCell
+                                colSpan={columnNames.length}
+                                className="h-24 text-center text-muted-foreground"
+                              >
+                                No data found
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </ScrollArea>
 
-                <div className="pagination">
-                  <div className="pagination-info">
-                    Showing {((pagination.page - 1) * pagination.limit) + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} rows
+                  {/* Pagination */}
+                  <div className="flex items-center justify-between p-4 border-t">
+                    <p className="text-sm text-muted-foreground">
+                      Showing {startRecord} to {endRecord} of {pagination.total} rows
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={pagination.page <= 1}
+                        onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
+                      >
+                        <ChevronLeft className="h-4 w-4 mr-1" />
+                        Previous
+                      </Button>
+                      <span className="text-sm text-muted-foreground px-2">
+                        Page {pagination.page} of {pagination.totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={pagination.page >= pagination.totalPages}
+                        onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
+                      >
+                        Next
+                        <ChevronRight className="h-4 w-4 ml-1" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="pagination-buttons">
-                    <button
-                      className="btn btn-sm btn-secondary"
-                      disabled={pagination.page <= 1}
-                      onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
-                    >
-                      Previous
-                    </button>
-                    <span className="text-sm" style={{ padding: '0 1rem' }}>
-                      Page {pagination.page} of {pagination.totalPages}
-                    </span>
-                    <button
-                      className="btn btn-sm btn-secondary"
-                      disabled={pagination.page >= pagination.totalPages}
-                      onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   );
