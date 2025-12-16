@@ -40,12 +40,12 @@ async function main(): Promise<void> {
     // Initialize channel providers
     const channelProviders = [];
 
-    // SMS channel (if enabled)
-    if (config.sms.enabled) {
+    // SMS channel (if enabled and credentials configured)
+    if (config.sms.enabled && config.sms.username && config.sms.password) {
       const smsProvider = new SmsChannelProvider({
         apiEndpoint: config.sms.apiEndpoint,
-        username: config.didww.username,
-        password: config.didww.password,
+        username: config.sms.username,
+        password: config.sms.password,
         callerId: config.didww.callerId,
         callerIdUsCanada: config.didww.callerIdUsCanada,
         messageTemplate: config.sms.messageTemplate,
@@ -53,6 +53,8 @@ async function main(): Promise<void> {
       });
       channelProviders.push(smsProvider);
       logger.info('SMS channel enabled');
+    } else if (config.sms.enabled) {
+      logger.warn('SMS enabled but credentials not configured (SMS_USERNAME/SMS_PASSWORD)');
     }
 
     // Voice channel (always available if ARI connects)

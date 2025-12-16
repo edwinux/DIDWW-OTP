@@ -75,10 +75,12 @@ const configSchema = z.object({
     path: z.string().default('/data/otp.db'),
   }),
 
-  // SMS configuration (DIDWW REST API)
+  // SMS configuration (DIDWW REST API - separate credentials from SIP)
   sms: z.object({
     enabled: z.coerce.boolean().default(true),
     apiEndpoint: z.string().default('https://us.sms-out.didww.com/outbound_messages'),
+    username: z.string().optional(),
+    password: z.string().optional(),
     messageTemplate: z.string().default('Your verification code is: {code}'),
     callbackUrl: z.string().optional(),
   }),
@@ -155,6 +157,8 @@ function parseEnvVars(): Record<string, unknown> {
     sms: {
       enabled: process.env.SMS_ENABLED,
       apiEndpoint: process.env.SMS_API_ENDPOINT,
+      username: process.env.SMS_USERNAME,
+      password: process.env.SMS_PASSWORD,
       messageTemplate: process.env.SMS_MESSAGE_TEMPLATE,
       callbackUrl: process.env.SMS_CALLBACK_URL,
     },
@@ -217,7 +221,10 @@ function maskSecrets(config: Config): Record<string, unknown> {
     },
     logging: config.logging,
     database: config.database,
-    sms: config.sms,
+    sms: {
+      ...config.sms,
+      password: config.sms.password ? '***MASKED***' : undefined,
+    },
     fraud: config.fraud,
     channels: config.channels,
     webhooks: config.webhooks,
