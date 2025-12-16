@@ -205,28 +205,38 @@ export class LogsController {
     try {
       const now = Date.now();
       const oneDayAgo = now - 24 * 60 * 60 * 1000;
-      const oneHourAgo = now - 60 * 60 * 1000;
 
-      // Get counts for different time windows
-      const total24h = this.otpRepo.countFiltered({ date_from: oneDayAgo });
-      const total1h = this.otpRepo.countFiltered({ date_from: oneHourAgo });
-      const success24h = this.otpRepo.countFiltered({ date_from: oneDayAgo, status: 'delivered' });
-      const failed24h = this.otpRepo.countFiltered({ date_from: oneDayAgo, status: 'failed' });
-      const shadowBanned24h = this.otpRepo.countFiltered({ date_from: oneDayAgo, shadow_banned: true });
+      // Get total count
+      const total = this.otpRepo.countFiltered({});
 
-      const successRate = total24h > 0 ? ((success24h / total24h) * 100).toFixed(1) : '0';
+      // Get last 24h count
+      const last24h = this.otpRepo.countFiltered({ date_from: oneDayAgo });
+
+      // Get status breakdown
+      const statuses = this.otpRepo.getDistinctValues('status');
+      const byStatus: Record<string, number> = {};
+      for (const status of statuses) {
+        byStatus[status] = this.otpRepo.countFiltered({ status });
+      }
+
+      // Get average fraud score (if available)
+      let avgFraudScore: number | null = null;
+      try {
+        const allRequests = this.otpRepo.findAllPaginated({}, 1000, 0, 'created_at', 'desc');
+        const scoresWithValues = allRequests.filter(r => r.fraud_score !== null && r.fraud_score !== undefined);
+        if (scoresWithValues.length > 0) {
+          const sum = scoresWithValues.reduce((acc, r) => acc + (r.fraud_score || 0), 0);
+          avgFraudScore = sum / scoresWithValues.length;
+        }
+      } catch {
+        // Ignore if fraud_score column doesn't exist
+      }
 
       res.json({
-        today: {
-          total: total24h,
-          success: success24h,
-          failed: failed24h,
-          shadowBanned: shadowBanned24h,
-          successRate: parseFloat(successRate),
-        },
-        lastHour: {
-          total: total1h,
-        },
+        total,
+        last24h,
+        byStatus,
+        avgFraudScore,
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
