@@ -98,6 +98,11 @@ export class AdminWebSocketServer {
       }
     });
 
+    // Handle pong responses (browser responds to ping with pong)
+    ws.on('pong', () => {
+      client.lastPing = Date.now();
+    });
+
     // Handle disconnection
     ws.on('close', () => {
       this.clients.delete(clientId);

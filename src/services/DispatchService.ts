@@ -349,15 +349,18 @@ export class DispatchService {
     try {
       const wsServer = getWebSocketServer();
       if (wsServer) {
+        logger.debug('Broadcasting OTP status update', { requestId, status, channel, clients: wsServer.getClientCount() });
         wsServer.broadcastOtpUpdate({
           id: requestId,
           status,
           channel,
           updated_at: Date.now(),
         });
+      } else {
+        logger.debug('WebSocket server not initialized, skipping broadcast');
       }
-    } catch {
-      // WebSocket might not be initialized yet, ignore
+    } catch (error) {
+      logger.warn('Failed to broadcast status update', { requestId, error: error instanceof Error ? error.message : String(error) });
     }
   }
 }
