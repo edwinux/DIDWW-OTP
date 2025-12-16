@@ -30,8 +30,9 @@ RUN apk add --no-cache \
     && find /var/lib/asterisk -name "*.txt" -delete \
     && mkdir -p /var/lib/asterisk/sounds/tts
 
-# Create app directory
+# Create app and data directories
 WORKDIR /app
+RUN mkdir -p /data
 
 # Copy built application
 COPY --from=builder /app/dist ./dist

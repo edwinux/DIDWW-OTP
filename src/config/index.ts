@@ -27,6 +27,7 @@ const configSchema = z.object({
     username: z.string().min(1, 'DIDWW_USERNAME is required'),
     password: z.string().min(1, 'DIDWW_PASSWORD is required'),
     callerId: z.string().regex(/^\d{10,15}$/, 'DIDWW_CALLER_ID must be 10-15 digits in E.164 format without +'),
+    callerIdUsCanada: z.string().optional(),
   }),
 
   // Required - Network
@@ -68,6 +69,44 @@ const configSchema = z.object({
   logging: z.object({
     level: logLevelSchema,
   }),
+
+  // Database configuration
+  database: z.object({
+    path: z.string().default('/data/otp.db'),
+  }),
+
+  // SMS configuration (DIDWW REST API)
+  sms: z.object({
+    enabled: z.coerce.boolean().default(true),
+    apiEndpoint: z.string().default('https://us.sms-out.didww.com/outbound_messages'),
+    messageTemplate: z.string().default('Your verification code is: {code}'),
+    callbackUrl: z.string().optional(),
+  }),
+
+  // Fraud detection configuration
+  fraud: z.object({
+    enabled: z.coerce.boolean().default(true),
+    shadowBanThreshold: z.coerce.number().int().min(0).max(100).default(50),
+    rateLimitPerHour: z.coerce.number().int().min(1).max(100).default(3),
+    rateLimitPerMinute: z.coerce.number().int().min(1).max(10).default(1),
+    circuitBreakerThreshold: z.coerce.number().int().min(1).max(20).default(5),
+    circuitBreakerWindowMinutes: z.coerce.number().int().min(1).max(1440).default(60),
+    circuitBreakerCooldownMinutes: z.coerce.number().int().min(1).max(1440).default(30),
+    geoMatchPenalty: z.coerce.number().int().min(0).max(100).default(30),
+    allowedCountries: z.string().optional(),
+  }),
+
+  // Channel configuration
+  channels: z.object({
+    default: z.string().default('sms,voice'),
+    enableFailover: z.coerce.boolean().default(true),
+  }),
+
+  // Webhook configuration
+  webhooks: z.object({
+    timeout: z.coerce.number().int().min(1000).max(30000).default(5000),
+    maxRetries: z.coerce.number().int().min(1).max(5).default(3),
+  }),
 });
 
 /**
@@ -85,6 +124,7 @@ function parseEnvVars(): Record<string, unknown> {
       username: process.env.DIDWW_USERNAME,
       password: process.env.DIDWW_PASSWORD,
       callerId: process.env.DIDWW_CALLER_ID,
+      callerIdUsCanada: process.env.DIDWW_CALLER_ID_US_CA,
     },
     network: {
       publicIp: process.env.PUBLIC_IP,
@@ -108,6 +148,34 @@ function parseEnvVars(): Record<string, unknown> {
     },
     logging: {
       level: process.env.LOG_LEVEL,
+    },
+    database: {
+      path: process.env.DATABASE_PATH,
+    },
+    sms: {
+      enabled: process.env.SMS_ENABLED,
+      apiEndpoint: process.env.SMS_API_ENDPOINT,
+      messageTemplate: process.env.SMS_MESSAGE_TEMPLATE,
+      callbackUrl: process.env.SMS_CALLBACK_URL,
+    },
+    fraud: {
+      enabled: process.env.FRAUD_ENABLED,
+      shadowBanThreshold: process.env.FRAUD_SHADOW_BAN_THRESHOLD,
+      rateLimitPerHour: process.env.FRAUD_RATE_LIMIT_HOUR,
+      rateLimitPerMinute: process.env.FRAUD_RATE_LIMIT_MINUTE,
+      circuitBreakerThreshold: process.env.FRAUD_CIRCUIT_BREAKER_THRESHOLD,
+      circuitBreakerWindowMinutes: process.env.FRAUD_CIRCUIT_BREAKER_WINDOW,
+      circuitBreakerCooldownMinutes: process.env.FRAUD_CIRCUIT_BREAKER_COOLDOWN,
+      geoMatchPenalty: process.env.FRAUD_GEO_MATCH_PENALTY,
+      allowedCountries: process.env.FRAUD_ALLOWED_COUNTRIES,
+    },
+    channels: {
+      default: process.env.CHANNELS_DEFAULT,
+      enableFailover: process.env.CHANNELS_ENABLE_FAILOVER,
+    },
+    webhooks: {
+      timeout: process.env.WEBHOOK_TIMEOUT,
+      maxRetries: process.env.WEBHOOK_MAX_RETRIES,
     },
   };
 }
@@ -133,6 +201,7 @@ function maskSecrets(config: Config): Record<string, unknown> {
       username: config.didww.username,
       password: '***MASKED***',
       callerId: config.didww.callerId,
+      callerIdUsCanada: config.didww.callerIdUsCanada,
     },
     network: {
       publicIp: config.network.publicIp,
@@ -147,6 +216,11 @@ function maskSecrets(config: Config): Record<string, unknown> {
       password: '***MASKED***',
     },
     logging: config.logging,
+    database: config.database,
+    sms: config.sms,
+    fraud: config.fraud,
+    channels: config.channels,
+    webhooks: config.webhooks,
   };
 }
 

@@ -1,25 +1,107 @@
 /**
- * DIDWW Voice OTP Gateway
+ * DIDWW Intelligent OTP Gateway
  *
- * Main entry point - initializes configuration, ARI client, and HTTP server.
+ * Main entry point - initializes database, services, ARI client, and HTTP server.
  */
 
 import { getConfig } from './config/index.js';
-import { ariManager, setupShutdownHandlers } from './ari/client.js';
+import { dbManager, runMigrations, seedAsnBlocklist } from './database/index.js';
+import { ariManager } from './ari/client.js';
 import { registerStasisHandlers } from './ari/handlers.js';
-import { startServer } from './server.js';
+import { OtpRequestRepository, FraudRulesRepository, WebhookLogRepository } from './repositories/index.js';
+import { SmsChannelProvider, VoiceChannelProvider } from './channels/index.js';
+import { FraudEngine, WebhookService, DispatchService } from './services/index.js';
+import { createServer } from './server.js';
 import { logger } from './utils/logger.js';
 
 async function main(): Promise<void> {
-  logger.info('DIDWW Voice OTP Gateway starting...');
+  logger.info('DIDWW Intelligent OTP Gateway starting...');
 
   try {
     // Load and validate configuration
     const config = getConfig();
-    logger.info('Configuration loaded', { sipHost: config.didww.sipHost });
+    logger.info('Configuration loaded', {
+      sipHost: config.didww.sipHost,
+      smsEnabled: config.sms.enabled,
+      fraudEnabled: config.fraud.enabled,
+    });
+
+    // Initialize database
+    logger.info('Initializing database...', { path: config.database.path });
+    dbManager.connect(config.database.path);
+    runMigrations();
+    seedAsnBlocklist();
+
+    // Initialize repositories
+    const otpRepo = new OtpRequestRepository();
+    const fraudRepo = new FraudRulesRepository();
+    const webhookLogRepo = new WebhookLogRepository();
+
+    // Initialize channel providers
+    const channelProviders = [];
+
+    // SMS channel (if enabled)
+    if (config.sms.enabled) {
+      const smsProvider = new SmsChannelProvider({
+        apiEndpoint: config.sms.apiEndpoint,
+        username: config.didww.username,
+        password: config.didww.password,
+        callerId: config.didww.callerId,
+        callerIdUsCanada: config.didww.callerIdUsCanada,
+        messageTemplate: config.sms.messageTemplate,
+        callbackUrl: config.sms.callbackUrl,
+      });
+      channelProviders.push(smsProvider);
+      logger.info('SMS channel enabled');
+    }
+
+    // Voice channel (always available if ARI connects)
+    const voiceProvider = new VoiceChannelProvider({
+      callerId: config.didww.callerId,
+      messageTemplate: config.voice.messageTemplate,
+      speed: config.voice.speed,
+      timeout: 30,
+    });
+    channelProviders.push(voiceProvider);
+
+    // Initialize services
+    const fraudEngine = new FraudEngine(fraudRepo, otpRepo, {
+      enabled: config.fraud.enabled,
+      shadowBanThreshold: config.fraud.shadowBanThreshold,
+      rateLimitPerHour: config.fraud.rateLimitPerHour,
+      rateLimitPerMinute: config.fraud.rateLimitPerMinute,
+      circuitBreakerThreshold: config.fraud.circuitBreakerThreshold,
+      circuitBreakerWindowMinutes: config.fraud.circuitBreakerWindowMinutes,
+      circuitBreakerCooldownMinutes: config.fraud.circuitBreakerCooldownMinutes,
+      geoMatchPenalty: config.fraud.geoMatchPenalty,
+      allowedCountries: config.fraud.allowedCountries?.split(',').map((c) => c.trim()),
+    });
+
+    const webhookService = new WebhookService(webhookLogRepo, {
+      timeout: config.webhooks.timeout,
+      maxRetries: config.webhooks.maxRetries,
+    });
+
+    const dispatchService = new DispatchService(
+      channelProviders,
+      fraudEngine,
+      webhookService,
+      otpRepo,
+      {
+        defaultChannels: config.channels.default.split(',').map((c) => c.trim()) as ('sms' | 'voice')[],
+        enableFailover: config.channels.enableFailover,
+      }
+    );
 
     // Set up graceful shutdown
-    setupShutdownHandlers();
+    const shutdown = async (signal: string) => {
+      logger.info(`Received ${signal}, shutting down...`);
+      await ariManager.disconnect();
+      dbManager.close();
+      process.exit(0);
+    };
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
 
     // Connect to Asterisk ARI
     const client = await ariManager.connect(['otp-stasis']);
@@ -27,10 +109,18 @@ async function main(): Promise<void> {
     // Register Stasis event handlers
     registerStasisHandlers(client);
 
-    // Start HTTP server
-    startServer();
+    // Create and start HTTP server
+    const app = createServer(dispatchService);
+    const port = config.api.port;
 
-    logger.info('Gateway ready');
+    app.listen(port, () => {
+      logger.info(`HTTP server listening on port ${port}`);
+    });
+
+    logger.info('Gateway ready', {
+      channels: channelProviders.map((p) => p.channelType),
+      fraudEnabled: config.fraud.enabled,
+    });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     logger.error('Failed to start gateway', { error: msg });
