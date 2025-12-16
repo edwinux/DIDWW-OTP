@@ -11,9 +11,16 @@ import { generateOtpTts } from '../utils/tts.js';
 import { emitOtpEvent } from '../services/OtpEventService.js';
 
 /**
- * Active calls tracking
+ * Call state tracking
  */
-const activeCalls = new Map<string, { phone: string; code: string }>();
+interface CallState {
+  phone: string;
+  code: string;
+  otpPlayed: boolean;       // Whether OTP audio finished playing
+  systemHangup: boolean;    // Whether system initiated hangup (vs user)
+}
+
+const activeCalls = new Map<string, CallState>();
 
 /**
  * Register Stasis event handlers on the ARI client
@@ -21,9 +28,9 @@ const activeCalls = new Map<string, { phone: string; code: string }>();
 export function registerStasisHandlers(client: AriClient): void {
   client.on('StasisStart', async (event, channel) => {
     const callId = event.args?.[0] || channel.id;
-    const callData = activeCalls.get(callId);
+    const callState = activeCalls.get(callId);
 
-    if (!callData) {
+    if (!callState) {
       logger.warn('StasisStart for unknown call', { callId });
       return;
     }
@@ -33,17 +40,23 @@ export function registerStasisHandlers(client: AriClient): void {
     logger.info('Call answered', { callId });
 
     try {
-      await handleOtpCall(client, channel, callData.code, callId);
-
-      // Emit completed event
-      emitOtpEvent(callId, 'voice', 'completed');
-      logger.info('Voice OTP completed', { callId });
+      await handleOtpCall(client, channel, callState, callId);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      logger.error('Error in OTP call flow', { callId, error: msg });
 
-      // Emit failed event with error details
-      emitOtpEvent(callId, 'voice', 'failed', { error: msg });
+      // Check if this is a "Channel not found" error (user hung up)
+      if (msg.includes('Channel not found') || msg.includes('not found')) {
+        // User hung up - emit hangup event with context
+        emitOtpEvent(callId, 'voice', 'hangup', {
+          hung_up_by: 'user',
+          otp_played: callState.otpPlayed,
+        });
+        logger.info('User hung up', { callId, otpPlayed: callState.otpPlayed });
+      } else {
+        // Actual error
+        logger.error('Error in OTP call flow', { callId, error: msg });
+        emitOtpEvent(callId, 'voice', 'failed', { error: msg });
+      }
     } finally {
       activeCalls.delete(callId);
     }
@@ -51,8 +64,19 @@ export function registerStasisHandlers(client: AriClient): void {
 
   client.on('StasisEnd', (_event, channel) => {
     const callId = channel.id;
-    logger.info('Call ended', { callId });
-    activeCalls.delete(callId);
+    const callState = activeCalls.get(callId);
+
+    if (callState && !callState.systemHangup) {
+      // User hung up before system did
+      emitOtpEvent(callId, 'voice', 'hangup', {
+        hung_up_by: 'user',
+        otp_played: callState.otpPlayed,
+      });
+      logger.info('User hung up (StasisEnd)', { callId, otpPlayed: callState.otpPlayed });
+      activeCalls.delete(callId);
+    }
+
+    logger.debug('Call ended', { callId });
   });
 
   logger.info('Stasis handlers registered');
@@ -61,7 +85,7 @@ export function registerStasisHandlers(client: AriClient): void {
 /**
  * Handle the OTP call flow: answer, generate TTS, play message, hangup
  */
-async function handleOtpCall(client: AriClient, channel: Channel, code: string, callId: string): Promise<void> {
+async function handleOtpCall(client: AriClient, channel: Channel, callState: CallState, callId: string): Promise<void> {
   const config = getConfig();
   const { messageTemplate, speed } = config.voice;
 
@@ -74,25 +98,42 @@ async function handleOtpCall(client: AriClient, channel: Channel, code: string, 
 
   try {
     // Generate TTS audio from template
-    const soundRef = await generateOtpTts(messageTemplate, code, speed);
+    const soundRef = await generateOtpTts(messageTemplate, callState.code, speed);
     logger.debug('Playing TTS audio', { soundRef });
 
     // Play the TTS message
     await playSound(client, channel, `sound:${soundRef}`);
 
+    // Mark OTP as played successfully
+    callState.otpPlayed = true;
+
     // Brief pause before hangup
     await sleep(500);
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
+
+    // Check if user hung up during playback
+    if (msg.includes('Channel not found') || msg.includes('not found')) {
+      throw error; // Re-throw to be handled by caller
+    }
+
     logger.error('TTS playback failed, falling back to digits', { error: msg });
 
     // Fallback: just speak digits if TTS fails
-    await speakDigits(client, channel, code, config.voice.digitPauseMs);
+    await speakDigits(client, channel, callState.code, config.voice.digitPauseMs);
+    callState.otpPlayed = true;
     await sleep(500);
   }
 
+  // Mark that system is initiating hangup
+  callState.systemHangup = true;
+
   // Hangup
   await channel.hangup();
+
+  // Emit completed event (system hung up after OTP played)
+  emitOtpEvent(callId, 'voice', 'completed', { hung_up_by: 'system' });
+  logger.info('Voice OTP completed', { callId });
 }
 
 /**
@@ -148,8 +189,13 @@ export async function originateOtpCall(
 ): Promise<void> {
   const config = getConfig();
 
-  // Store call data for StasisStart handler
-  activeCalls.set(callId, { phone, code });
+  // Store call state for StasisStart handler
+  activeCalls.set(callId, {
+    phone,
+    code,
+    otpPlayed: false,
+    systemHangup: false,
+  });
 
   // Emit calling event
   emitOtpEvent(callId, 'voice', 'calling');

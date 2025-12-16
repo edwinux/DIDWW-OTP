@@ -82,7 +82,7 @@ export default function TesterPage() {
             addConsoleEntry(entryType, source, msg, data);
 
             // Close WebSocket on final events
-            if (['completed', 'delivered', 'failed', 'undelivered'].includes(data.event_type)) {
+            if (['completed', 'delivered', 'failed', 'undelivered', 'hangup', 'no_answer', 'busy'].includes(data.event_type)) {
               console.log('[WS] Final event reached, closing connection');
               addConsoleEntry('system', 'WS', 'Delivery complete, closing connection');
               ws.close();
@@ -317,8 +317,18 @@ function formatChannelEvent(
         return { type: 'warning', source: 'VOICE', message: 'No answer' };
       case 'busy':
         return { type: 'warning', source: 'VOICE', message: 'Line busy' };
-      case 'hangup':
+      case 'hangup': {
+        const otpPlayed = eventData?.otp_played as boolean | undefined;
+        const hungUpBy = eventData?.hung_up_by as string | undefined;
+        if (hungUpBy === 'user') {
+          return {
+            type: otpPlayed ? 'success' : 'warning',
+            source: 'VOICE',
+            message: otpPlayed ? 'User hung up (OTP delivered)' : 'User hung up before OTP played',
+          };
+        }
         return { type: 'warning', source: 'VOICE', message: 'Call hung up' };
+      }
       default:
         return { type: 'info', source: 'VOICE', message: `Voice: ${eventType}` };
     }
