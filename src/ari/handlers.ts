@@ -8,6 +8,8 @@ import type { Client as AriClient, Channel } from 'ari-client';
 import { getConfig } from '../config/index.js';
 import { logger } from '../utils/logger.js';
 import { generateOtpTts } from '../utils/tts.js';
+import { OtpRequestRepository } from '../repositories/OtpRequestRepository.js';
+import { getWebSocketServer } from '../admin/websocket.js';
 
 /**
  * Active calls tracking
@@ -31,9 +33,41 @@ export function registerStasisHandlers(client: AriClient): void {
 
     try {
       await handleOtpCall(client, channel, callData.code);
+
+      // Update status to delivered after OTP is played
+      const otpRepo = new OtpRequestRepository();
+      otpRepo.updateStatus(callId, 'delivered');
+
+      // Broadcast status update via WebSocket
+      const wsServer = getWebSocketServer();
+      if (wsServer) {
+        wsServer.broadcastOtpUpdate({
+          id: callId,
+          status: 'delivered',
+          channel: 'voice',
+          updated_at: Date.now(),
+        });
+      }
+
+      logger.info('Voice OTP delivered', { callId });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       logger.error('Error in OTP call flow', { callId, error: msg });
+
+      // Update status to failed on error
+      const otpRepo = new OtpRequestRepository();
+      otpRepo.updateStatus(callId, 'failed', { error_message: msg });
+
+      // Broadcast failure via WebSocket
+      const wsServer = getWebSocketServer();
+      if (wsServer) {
+        wsServer.broadcastOtpUpdate({
+          id: callId,
+          status: 'failed',
+          channel: 'voice',
+          updated_at: Date.now(),
+        });
+      }
     } finally {
       activeCalls.delete(callId);
     }
