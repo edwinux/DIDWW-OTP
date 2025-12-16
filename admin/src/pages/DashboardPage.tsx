@@ -4,24 +4,11 @@ import type { LogsStats } from '@/types';
 import { StatCard, TrafficChart, StatusBreakdown, RecentActivity } from '@/components/dashboard';
 import { Activity, CheckCircle, ShieldAlert, Clock } from 'lucide-react';
 
-// Generate mock traffic data for the chart (will be replaced with real API later)
-function generateTrafficData() {
-  const data = [];
-  const now = new Date();
-  for (let i = 23; i >= 0; i--) {
-    const time = new Date(now.getTime() - i * 60 * 60 * 1000);
-    const hour = time.getHours();
-    // Simulate traffic patterns
-    const baseTraffic = Math.floor(Math.random() * 50) + 10;
-    const peakMultiplier = hour >= 9 && hour <= 17 ? 2 : 1;
-    data.push({
-      time: time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-      requests: Math.floor(baseTraffic * peakMultiplier),
-      verified: Math.floor(baseTraffic * peakMultiplier * 0.7),
-      failed: Math.floor(baseTraffic * peakMultiplier * 0.1),
-    });
-  }
-  return data;
+interface TrafficDataPoint {
+  time: string;
+  requests: number;
+  verified: number;
+  failed: number;
 }
 
 // Generate mock recent activity
@@ -72,20 +59,24 @@ function generateRecentActivity(stats: LogsStats | null) {
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<LogsStats | null>(null);
+  const [trafficData, setTrafficData] = useState<TrafficDataPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [trafficData] = useState(generateTrafficData);
 
   useEffect(() => {
-    fetchStats();
-    const interval = setInterval(fetchStats, 30000);
+    fetchData();
+    const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  const fetchStats = async () => {
+  const fetchData = async () => {
     try {
-      const response = await api.get('/admin/logs/stats');
-      setStats(response.data);
+      const [statsRes, trafficRes] = await Promise.all([
+        api.get('/admin/logs/stats'),
+        api.get('/admin/logs/hourly-traffic'),
+      ]);
+      setStats(statsRes.data);
+      setTrafficData(trafficRes.data.data || []);
       setError('');
     } catch (err) {
       setError('Failed to load statistics');

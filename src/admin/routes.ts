@@ -67,6 +67,10 @@ export function registerAdminRoutes(app: Express, dispatchService: DispatchServi
     logsController.getStats(req, res);
   });
 
+  app.get('/admin/logs/hourly-traffic', requireAdminAuth, (req: Request, res: Response) => {
+    logsController.getHourlyTraffic(req, res);
+  });
+
   // ============================================================================
   // Database Browser Routes
   // ============================================================================

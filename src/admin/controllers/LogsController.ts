@@ -198,6 +198,24 @@ export class LogsController {
   }
 
   /**
+   * GET /admin/logs/hourly-traffic
+   * Get hourly traffic data for the last 24 hours
+   */
+  async getHourlyTraffic(_req: Request, res: Response): Promise<void> {
+    try {
+      const data = this.otpRepo.getHourlyTraffic(24);
+      res.json({ data });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error('Failed to fetch hourly traffic', { error: errorMessage });
+      res.status(500).json({
+        error: 'internal_error',
+        message: 'Failed to fetch hourly traffic',
+      });
+    }
+  }
+
+  /**
    * GET /admin/logs/stats
    * Get summary statistics
    */

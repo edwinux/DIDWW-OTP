@@ -367,4 +367,61 @@ export class OtpRequestRepository {
     const results = stmt.all() as Record<string, string>[];
     return results.map((r) => r[column]);
   }
+
+  /**
+   * Get hourly traffic data for the last N hours
+   */
+  getHourlyTraffic(hours: number = 24): { time: string; requests: number; verified: number; failed: number }[] {
+    const now = Date.now();
+    const cutoff = now - hours * 60 * 60 * 1000;
+
+    // Get all requests in the time window
+    const stmt = this.db.prepare(`
+      SELECT created_at, status FROM otp_requests
+      WHERE created_at >= ?
+      ORDER BY created_at ASC
+    `);
+    const rows = stmt.all(cutoff) as { created_at: number; status: string }[];
+
+    // Group by hour
+    const hourlyData = new Map<number, { requests: number; verified: number; failed: number }>();
+
+    // Initialize all hours with zeros
+    for (let i = hours - 1; i >= 0; i--) {
+      const hourTimestamp = now - i * 60 * 60 * 1000;
+      const hourKey = Math.floor(hourTimestamp / (60 * 60 * 1000));
+      hourlyData.set(hourKey, { requests: 0, verified: 0, failed: 0 });
+    }
+
+    // Count requests per hour
+    for (const row of rows) {
+      const hourKey = Math.floor(row.created_at / (60 * 60 * 1000));
+      const hourStats = hourlyData.get(hourKey);
+      if (hourStats) {
+        hourStats.requests++;
+        if (row.status === 'verified') {
+          hourStats.verified++;
+        } else if (row.status === 'failed' || row.status === 'rejected') {
+          hourStats.failed++;
+        }
+      }
+    }
+
+    // Convert to array with formatted time
+    const result: { time: string; requests: number; verified: number; failed: number }[] = [];
+    const sortedHours = Array.from(hourlyData.keys()).sort((a, b) => a - b);
+
+    for (const hourKey of sortedHours) {
+      const stats = hourlyData.get(hourKey)!;
+      const date = new Date(hourKey * 60 * 60 * 1000);
+      result.push({
+        time: date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        requests: stats.requests,
+        verified: stats.verified,
+        failed: stats.failed,
+      });
+    }
+
+    return result;
+  }
 }
