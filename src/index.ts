@@ -47,8 +47,8 @@ async function main(): Promise<void> {
         apiEndpoint: config.sms.apiEndpoint,
         username: config.sms.username,
         password: config.sms.password,
-        callerId: config.didww.callerId,
-        callerIdUsCanada: config.didww.callerIdUsCanada,
+        callerId: config.sms.callerId || config.didww.callerId,
+        callerIdUsCanada: config.sms.callerIdUsCanada || config.didww.callerIdUsCanada,
         messageTemplate: config.sms.messageTemplate,
         callbackUrl: config.sms.callbackUrl,
       });

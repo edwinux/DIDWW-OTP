@@ -81,6 +81,8 @@ const configSchema = z.object({
     apiEndpoint: z.string().default('https://us.sms-out.didww.com/outbound_messages'),
     username: z.string().optional(),
     password: z.string().optional(),
+    callerId: z.string().optional(), // Alphanumeric sender ID (e.g., "ProMakeup")
+    callerIdUsCanada: z.string().optional(), // Numeric for US/Canada (e.g., "12125551234")
     messageTemplate: z.string().default('Your verification code is: {code}'),
     callbackUrl: z.string().optional(),
   }),
@@ -170,6 +172,8 @@ function parseEnvVars(): Record<string, unknown> {
       apiEndpoint: process.env.SMS_API_ENDPOINT,
       username: process.env.SMS_USERNAME,
       password: process.env.SMS_PASSWORD,
+      callerId: process.env.SMS_CALLER_ID,
+      callerIdUsCanada: process.env.SMS_CALLER_ID_US_CANADA,
       messageTemplate: process.env.SMS_MESSAGE_TEMPLATE,
       callbackUrl: process.env.SMS_CALLBACK_URL,
     },
