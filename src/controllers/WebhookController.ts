@@ -35,12 +35,35 @@ const dlrCallbackSchema = z.object({
       end_time: z.string().optional(),
       fragments_sent: z.number().optional(),
       price: z.number().optional(),
-      code_id: z.string().nullable().optional(),
+      code_id: z.union([z.string(), z.number()]).nullable().optional(),
       error_code: z.string().optional(),
       error_message: z.string().optional(),
     }),
   }),
 });
+
+/**
+ * DIDWW SMS error code descriptions (for admin logs only)
+ */
+const DIDWW_ERROR_CODES: Record<number, string> = {
+  1: 'No routes found',
+  2: 'No rate found',
+  3: 'No routes found',
+  4: 'Internal error',
+  5: 'SMS trunk is blocked',
+  6: 'Internal error',
+  7: 'Origination account is blocked',
+  8: 'SMS source address is not allowed',
+  9: 'SMS destination address is not allowed',
+  10: 'SMS Campaign not found or blocked',
+  11: 'SMS Campaign not found or blocked',
+  100: 'Insufficient balance',
+  101: 'All delivery attempts failed within the TTL',
+  102: 'No encoding available',
+  103: 'Max balance attempts reached',
+  104: 'Message defragmentation failed',
+  105: 'Routing failed',
+};
 
 /**
  * Webhook Controller
@@ -145,19 +168,50 @@ export class WebhookController {
     let eventType: 'delivered' | 'failed' | 'undelivered' | null = null;
     if (status === 'delivered' || status === 'sent' || status === 'success') {
       eventType = 'delivered';
-    } else if (status === 'failed' || status === 'rejected' || status === 'expired') {
+    } else if (
+      status === 'failed' ||
+      status === 'rejected' ||
+      status === 'expired' ||
+      status === 'undelivered' ||
+      status === 'routing error' ||
+      status === 'error' ||
+      status.includes('error') ||
+      status.includes('failed')
+    ) {
       eventType = 'failed';
-    } else if (status === 'undelivered') {
-      eventType = 'undelivered';
+    }
+
+    // If code_id is present and non-null, treat as failure
+    const codeId = data.attributes.code_id;
+    if (codeId !== null && codeId !== undefined && codeId !== 'null') {
+      const numericCode = typeof codeId === 'number' ? codeId : parseInt(codeId, 10);
+      if (!isNaN(numericCode) && numericCode > 0) {
+        eventType = 'failed';
+      }
     }
 
     if (eventType) {
-      // Emit SMS event (handles DB update and WebSocket broadcast)
-      const eventData = data.attributes.error_message
-        ? { error: data.attributes.error_message, error_code: data.attributes.error_code }
-        : undefined;
+      // Build event data for admin logs (error descriptions not exposed to client API)
+      const eventData: Record<string, unknown> = {};
 
-      emitOtpEvent(otpRequest.id, 'sms', eventType, eventData);
+      // Add error message if present
+      if (data.attributes.error_message) {
+        eventData.error = data.attributes.error_message;
+      }
+
+      // Add error code and description for admin logs
+      if (codeId !== null && codeId !== undefined) {
+        const numericCode = typeof codeId === 'number' ? codeId : parseInt(String(codeId), 10);
+        eventData.error_code = numericCode;
+        if (!isNaN(numericCode) && DIDWW_ERROR_CODES[numericCode]) {
+          eventData.error_description = DIDWW_ERROR_CODES[numericCode];
+        }
+      }
+
+      // Add original status for debugging
+      eventData.didww_status = data.attributes.status;
+
+      emitOtpEvent(otpRequest.id, 'sms', eventType, Object.keys(eventData).length > 0 ? eventData : undefined);
 
       logger.info('SMS DLR event emitted', {
         requestId: otpRequest.id,
