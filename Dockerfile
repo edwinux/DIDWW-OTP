@@ -26,6 +26,12 @@ RUN npm run build \
 # Stage 3: Production runtime with Asterisk
 FROM alpine:3.19
 
+# Build-time arguments for version info
+ARG BUILD_COMMIT=dev
+ARG BUILD_TIME
+ENV BUILD_COMMIT=${BUILD_COMMIT}
+ENV BUILD_TIME=${BUILD_TIME}
+
 # Install runtime dependencies including PicoTTS
 RUN apk add --no-cache \
     asterisk \

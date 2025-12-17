@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import {
   ChevronRight,
   LogOut,
   Shield,
+  GitCommit,
 } from 'lucide-react';
 
 interface NavItem {
@@ -31,7 +32,15 @@ const navItems: NavItem[] = [
 
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
+  const [version, setVersion] = useState<{ commit: string; buildTime: string | null } | null>(null);
   const { logout } = useAuth();
+
+  useEffect(() => {
+    fetch('/admin/version')
+      .then(res => res.json())
+      .then(data => setVersion(data))
+      .catch(() => setVersion({ commit: 'unknown', buildTime: null }));
+  }, []);
 
   const handleLogout = async () => {
     await logout();
@@ -131,6 +140,31 @@ export function Sidebar() {
               <TooltipContent side="right">Logout</TooltipContent>
             )}
           </Tooltip>
+
+          {/* Version Info */}
+          {version && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className={cn(
+                  'flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground/60',
+                  collapsed && 'justify-center px-2'
+                )}>
+                  <GitCommit className="h-3 w-3 shrink-0" />
+                  {!collapsed && (
+                    <span className="font-mono truncate">
+                      {version.commit === 'dev' ? 'dev' : version.commit.slice(0, 7)}
+                    </span>
+                  )}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                <div className="text-xs">
+                  <div>Commit: {version.commit}</div>
+                  {version.buildTime && <div>Built: {new Date(version.buildTime).toLocaleString()}</div>}
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          )}
         </div>
       </aside>
     </TooltipProvider>
