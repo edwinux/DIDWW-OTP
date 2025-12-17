@@ -119,5 +119,16 @@ export function registerAdminRoutes(app: Express, dispatchService: DispatchServi
     });
   });
 
+  // ============================================================================
+  // Version Info (public, no auth required)
+  // ============================================================================
+
+  app.get('/admin/version', (_req: Request, res: Response) => {
+    res.json({
+      commit: process.env.BUILD_COMMIT || 'dev',
+      buildTime: process.env.BUILD_TIME || null,
+    });
+  });
+
   logger.info('Admin routes registered');
 }

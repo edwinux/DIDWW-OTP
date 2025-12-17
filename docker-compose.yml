@@ -1,5 +1,6 @@
 services:
   gateway:
+    image: ${DEPLOY_IMAGE:-ghcr.io/edwinux/didww-otp:latest}
     build: .
     container_name: didww-otp-gateway
     ports:
