@@ -24,6 +24,7 @@ const dispatchSchema = z.object({
     .min(1)
     .default(['sms', 'voice']),
   webhook_url: z.string().url().optional(),
+  ip: z.string().ip().optional(),
 });
 
 /**
@@ -53,13 +54,14 @@ export class DispatchController {
       return;
     }
 
-    const { phone, code, session_id, channels, webhook_url } = validation.data;
+    const { phone, code, session_id, channels, webhook_url, ip: bodyIp } = validation.data;
 
-    // Extract client IP
-    const clientIp = extractClientIp(
+    // Extract client IP - prefer explicit body IP over header/socket
+    const headerIp = extractClientIp(
       req.headers as Record<string, string | string[] | undefined>,
       req.socket.remoteAddress
     );
+    const clientIp = bodyIp || headerIp;
 
     // Normalize phone to E.164
     const e164Phone = phone.startsWith('+') ? phone : `+${phone}`;
