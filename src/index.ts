@@ -11,6 +11,7 @@ import { registerStasisHandlers } from './ari/handlers.js';
 import { OtpRequestRepository, FraudRulesRepository, WebhookLogRepository } from './repositories/index.js';
 import { SmsChannelProvider, VoiceChannelProvider } from './channels/index.js';
 import { FraudEngine, WebhookService, DispatchService } from './services/index.js';
+import { initializeCallerIdRouter } from './services/CallerIdRouter.js';
 import { createServer } from './server.js';
 import { startAdminServer } from './admin/index.js';
 import { logger } from './utils/logger.js';
@@ -33,6 +34,10 @@ async function main(): Promise<void> {
     runMigrations();
     seedAsnBlocklist();
 
+    // Initialize caller ID router (loads routes from database)
+    initializeCallerIdRouter();
+    logger.info('Caller ID router initialized');
+
     // Initialize repositories
     const otpRepo = new OtpRequestRepository();
     const fraudRepo = new FraudRulesRepository();
@@ -47,8 +52,6 @@ async function main(): Promise<void> {
         apiEndpoint: config.sms.apiEndpoint,
         username: config.sms.username,
         password: config.sms.password,
-        callerId: config.sms.callerId || config.didww.callerId,
-        callerIdUsCanada: config.sms.callerIdUsCanada || config.didww.callerIdUsCanada,
         messageTemplate: config.sms.messageTemplate,
         callbackUrl: config.sms.callbackUrl,
       });
@@ -60,7 +63,6 @@ async function main(): Promise<void> {
 
     // Voice channel (always available if ARI connects)
     const voiceProvider = new VoiceChannelProvider({
-      callerId: config.didww.callerId,
       messageTemplate: config.voice.messageTemplate,
       speed: config.voice.speed,
       timeout: 30,

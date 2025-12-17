@@ -2,11 +2,12 @@
  * SMS Channel Provider
  *
  * DIDWW REST API integration for SMS OTP delivery.
- * Based on working implementation from pro.makeup/supabase/functions/send-sms.
+ * Uses CallerIdRouter for prefix-based caller ID selection.
  */
 
 import type { IChannelProvider, ChannelDeliveryResult, ChannelType } from './IChannelProvider.js';
 import { emitOtpEvent } from '../services/OtpEventService.js';
+import { getCallerIdRouter } from '../services/CallerIdRouter.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -16,17 +17,8 @@ export interface SmsConfig {
   apiEndpoint: string;
   username: string;
   password: string;
-  callerId: string;
-  callerIdUsCanada?: string;
   messageTemplate: string;
   callbackUrl?: string;
-}
-
-/**
- * Check if phone is US or Canada (+1 followed by valid area code)
- */
-function isUsOrCanada(phone: string): boolean {
-  return /^\+1[2-9]\d{9}$/.test(phone);
 }
 
 /**
@@ -47,10 +39,28 @@ export class SmsChannelProvider implements IChannelProvider {
     const e164Phone = phone.startsWith('+') ? phone : `+${phone}`;
     const destination = e164Phone.replace(/^\+/, '');
 
-    // Select caller ID based on destination
-    const source = isUsOrCanada(e164Phone)
-      ? this.config.callerIdUsCanada || this.config.callerId
-      : this.config.callerId;
+    // Get caller ID from router (prefix-based routing)
+    const router = getCallerIdRouter();
+    const source = router.getCallerId('sms', e164Phone);
+
+    if (!source) {
+      logger.error('No caller ID route configured for SMS destination', {
+        requestId,
+        phone: phone.slice(0, 5) + '***',
+      });
+
+      emitOtpEvent(requestId, 'sms', 'failed', {
+        error: 'No caller ID route configured',
+        error_code: 'NO_CALLER_ID_ROUTE',
+      });
+
+      return {
+        success: false,
+        channelType: 'sms',
+        error: 'No caller ID route configured for this destination',
+        errorCode: 'NO_CALLER_ID_ROUTE',
+      };
+    }
 
     // Format message
     const message = this.config.messageTemplate.replace(/\{code\}/g, code);

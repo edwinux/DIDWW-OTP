@@ -10,7 +10,7 @@ import { logger } from '../utils/logger.js';
 /**
  * Schema version for migration tracking
  */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 /**
  * SQL schema definitions
@@ -158,6 +158,27 @@ ALTER TABLE otp_requests ADD COLUMN channel_status TEXT;
 `;
 
 /**
+ * V3 Migration: Add caller_id_routes table for prefix-based caller ID routing
+ */
+const V3_MIGRATION_SQL = `
+-- Caller ID routing rules by destination prefix
+CREATE TABLE IF NOT EXISTS caller_id_routes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel TEXT NOT NULL CHECK(channel IN ('sms', 'voice')),
+  prefix TEXT NOT NULL,
+  caller_id TEXT NOT NULL,
+  description TEXT,
+  enabled INTEGER DEFAULT 1,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE(channel, prefix)
+);
+
+CREATE INDEX IF NOT EXISTS idx_caller_id_routes_channel ON caller_id_routes(channel);
+CREATE INDEX IF NOT EXISTS idx_caller_id_routes_enabled ON caller_id_routes(enabled);
+`;
+
+/**
  * Run database migrations
  */
 export function runMigrations(): void {
@@ -196,6 +217,20 @@ export function runMigrations(): void {
       // Column might already exist if schema was created fresh with V2
       const msg = err instanceof Error ? err.message : String(err);
       if (!msg.includes('duplicate column')) {
+        throw err;
+      }
+    }
+  }
+
+  // Run V3 migration if upgrading from V2
+  if (currentVersion < 3) {
+    logger.info('Applying V3 migration...', { from: currentVersion, to: 3 });
+    try {
+      db.exec(V3_MIGRATION_SQL);
+    } catch (err) {
+      // Table might already exist if schema was created fresh with V3
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('already exists')) {
         throw err;
       }
     }

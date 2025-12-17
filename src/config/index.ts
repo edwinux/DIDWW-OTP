@@ -26,8 +26,8 @@ const configSchema = z.object({
     sipHost: z.string().min(1, 'DIDWW_SIP_HOST is required'),
     username: z.string().min(1, 'DIDWW_USERNAME is required'),
     password: z.string().min(1, 'DIDWW_PASSWORD is required'),
-    callerId: z.string().regex(/^\d{10,15}$/, 'DIDWW_CALLER_ID must be 10-15 digits in E.164 format without +'),
-    callerIdUsCanada: z.string().optional(),
+    // Caller IDs now managed via database (Admin UI -> Settings -> Caller ID Routes)
+    // These env vars are deprecated and ignored
   }),
 
   // Required - Network
@@ -81,8 +81,7 @@ const configSchema = z.object({
     apiEndpoint: z.string().default('https://us.sms-out.didww.com/outbound_messages'),
     username: z.string().optional(),
     password: z.string().optional(),
-    callerId: z.string().optional(), // Alphanumeric sender ID (e.g., "ProMakeup")
-    callerIdUsCanada: z.string().optional(), // Numeric for US/Canada (e.g., "12125551234")
+    // Caller IDs now managed via database (Admin UI -> Settings -> Caller ID Routes)
     messageTemplate: z.string().default('Your verification code is: {code}'),
     callbackUrl: z.string().optional(),
   }),
@@ -138,8 +137,7 @@ function parseEnvVars(): Record<string, unknown> {
       sipHost: process.env.DIDWW_SIP_HOST,
       username: process.env.DIDWW_USERNAME,
       password: process.env.DIDWW_PASSWORD,
-      callerId: process.env.DIDWW_CALLER_ID,
-      callerIdUsCanada: process.env.DIDWW_CALLER_ID_US_CA,
+      // Caller IDs now managed via database
     },
     network: {
       publicIp: process.env.PUBLIC_IP,
@@ -172,8 +170,7 @@ function parseEnvVars(): Record<string, unknown> {
       apiEndpoint: process.env.SMS_API_ENDPOINT,
       username: process.env.SMS_USERNAME,
       password: process.env.SMS_PASSWORD,
-      callerId: process.env.SMS_CALLER_ID,
-      callerIdUsCanada: process.env.SMS_CALLER_ID_US_CANADA,
+      // Caller IDs now managed via database
       messageTemplate: process.env.SMS_MESSAGE_TEMPLATE,
       callbackUrl: process.env.SMS_CALLBACK_URL,
     },
@@ -228,8 +225,6 @@ function maskSecrets(config: Config): Record<string, unknown> {
       sipHost: config.didww.sipHost,
       username: config.didww.username,
       password: '***MASKED***',
-      callerId: config.didww.callerId,
-      callerIdUsCanada: config.didww.callerIdUsCanada,
     },
     network: {
       publicIp: config.network.publicIp,
