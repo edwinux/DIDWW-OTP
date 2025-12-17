@@ -44,7 +44,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ steps.repo.outputs.lowercase }}
           tags: |
-            type=sha,prefix=
+            type=sha,format=long,prefix=
             type=raw,value=latest
 
       - name: Build and push Docker image
