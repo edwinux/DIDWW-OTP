@@ -70,7 +70,8 @@ Send an OTP via SMS and/or Voice.
   "code": "123456",
   "channels": ["sms", "voice"],
   "session_id": "optional-session-id",
-  "webhook_url": "https://your-app.com/webhook"
+  "webhook_url": "https://your-app.com/webhook",
+  "ip": "223.206.64.19"
 }
 ```
 
@@ -81,6 +82,7 @@ Send an OTP via SMS and/or Voice.
 | `channels` | array | No | Delivery channels: `["sms", "voice"]` (default: both) |
 | `session_id` | string | No | Your session identifier for tracking |
 | `webhook_url` | string | No | URL for delivery status webhooks |
+| `ip` | string | No | End-user's IP address for fraud detection. Use when your backend proxies requests. |
 
 **Response:**
 ```json
@@ -90,6 +92,19 @@ Send an OTP via SMS and/or Voice.
   "channel": "sms",
   "phone": "+14155551234"
 }
+```
+
+**Security Note: Client IP for Fraud Detection**
+
+The `ip` field enables accurate fraud detection when your backend proxies OTP requests:
+
+- **Backend-to-API calls**: Include `ip` with your end-user's real IP address
+- **Direct proxy calls**: Omit `ip` - the gateway uses `X-Forwarded-For` headers
+- **Never send fake IPs** - this undermines fraud detection for legitimate users
+
+Example: User at `223.206.64.19` → Your backend → OTP Gateway
+```json
+{"phone": "+14155551234", "code": "123456", "ip": "223.206.64.19"}
 ```
 
 ---

@@ -59,6 +59,8 @@ The gateway processes OTP requests through fraud detection, routes to appropriat
 
 ### Controllers (src/controllers/)
 - `DispatchController.ts` - POST /dispatch and legacy /send-otp endpoints
+  - Lines 16-28: Request body schema with optional ip field
+  - Lines 59-64: IP extraction prioritizing body IP over headers
 - `WebhookController.ts:71-229` - Webhook callback handlers
   - Lines 81-120: POST /webhooks/auth - Authentication feedback
   - Lines 125-228: POST /webhooks/dlr - DIDWW delivery report callbacks
@@ -175,6 +177,9 @@ SMS uses REST API credentials (SMS_USERNAME/SMS_PASSWORD) while Voice uses SIP t
 
 ### DIDWW DLR Callback Handling
 SMS delivery reports arrive via POST /webhooks/dlr in JSON:API format. Controller maps DIDWW-specific status codes to normalized events, translates error codes to descriptions (admin logs only), and emits events via OtpEventService. See WebhookController.ts:125-228.
+
+### Explicit IP for Fraud Detection
+POST /dispatch accepts optional ip field in request body. Body IP takes priority over X-Forwarded-For and socket IP for fraud detection. Enables accurate fraud scoring when gateway is behind proxies or when integrating with platforms that track client IPs. See DispatchController.ts:27,59-64.
 
 ## Testing
 - `test-otp.sh` - Shell script for testing OTP dispatch
