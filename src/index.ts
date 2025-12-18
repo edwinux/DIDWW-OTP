@@ -8,10 +8,13 @@ import { getConfig } from './config/index.js';
 import { dbManager, runMigrations, seedAsnBlocklist, seedCallerIdRoutes } from './database/index.js';
 import { ariManager } from './ari/client.js';
 import { registerStasisHandlers } from './ari/handlers.js';
+import { getAmiClient } from './ami/client.js';
+import { registerAmiHandlers } from './ami/handlers.js';
 import { OtpRequestRepository, FraudRulesRepository, WebhookLogRepository } from './repositories/index.js';
 import { SmsChannelProvider, VoiceChannelProvider } from './channels/index.js';
 import { FraudEngine, WebhookService, DispatchService } from './services/index.js';
 import { initializeCallerIdRouter } from './services/CallerIdRouter.js';
+import { initAsnDatabase, getAsnDatabase } from './services/AsnDatabase.js';
 import { createServer } from './server.js';
 import { startAdminServer } from './admin/index.js';
 import { logger } from './utils/logger.js';
@@ -38,6 +41,18 @@ async function main(): Promise<void> {
     // Initialize caller ID router (loads routes from database)
     initializeCallerIdRouter();
     logger.info('Caller ID router initialized');
+
+    // Initialize ASN database for fraud detection
+    logger.info('Initializing ASN database...', { enabled: config.asn.enabled });
+    await initAsnDatabase({
+      enabled: config.asn.enabled,
+      dataPath: config.asn.dataPath,
+      updateIntervalHours: config.asn.updateIntervalHours,
+      updateRateLimitHours: config.asn.updateRateLimitHours,
+      unresolvedThreshold: config.asn.unresolvedThreshold,
+      cdnUrl: config.asn.cdnUrl,
+      shadowBanUnresolved: config.asn.shadowBanUnresolved,
+    });
 
     // Initialize repositories
     const otpRepo = new OtpRequestRepository();
@@ -103,6 +118,7 @@ async function main(): Promise<void> {
     const shutdown = async (signal: string) => {
       logger.info(`Received ${signal}, shutting down...`);
       await ariManager.disconnect();
+      getAsnDatabase().stopPeriodicUpdates();
       dbManager.close();
       process.exit(0);
     };
@@ -114,6 +130,25 @@ async function main(): Promise<void> {
 
     // Register Stasis event handlers
     registerStasisHandlers(client);
+
+    // Connect to AMI for SIP failure detection (optional)
+    if (config.ami.enabled && config.ami.secret) {
+      try {
+        const amiClient = getAmiClient();
+        await amiClient.connect({
+          host: config.ami.host,
+          port: config.ami.port,
+          username: config.ami.username,
+          secret: config.ami.secret,
+        });
+        registerAmiHandlers();
+        logger.info('AMI connected for SIP failure detection');
+      } catch (amiError) {
+        // AMI is optional - log warning but don't fail startup
+        const msg = amiError instanceof Error ? amiError.message : String(amiError);
+        logger.warn('AMI connection failed (SIP failure detection disabled)', { error: msg });
+      }
+    }
 
     // Create and start HTTP server
     const app = createServer(dispatchService);

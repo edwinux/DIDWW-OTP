@@ -7,10 +7,9 @@
 
 import { FraudRulesRepository } from '../repositories/FraudRulesRepository.js';
 import { OtpRequestRepository } from '../repositories/OtpRequestRepository.js';
-import { getCountryFromIp, getCountryFromPhone, getPhonePrefix } from '../utils/geoip.js';
+import { getCountryFromIp, getCountryFromPhone, getPhonePrefix, resolveAsnFromIp, shouldShadowBanUnresolvedAsn } from '../utils/geoip.js';
 import { getIpSubnet } from '../utils/ipv6.js';
 import { logger } from '../utils/logger.js';
-import geoip from 'geoip-lite';
 
 /**
  * Fraud check request
@@ -86,17 +85,29 @@ export class FraudEngine {
   /**
    * Evaluate fraud risk for a request
    * ALWAYS returns shadowBan=true for detected fraud (never reveal detection)
+   *
+   * Now async to support ASN database updates when IP is unresolved:
+   * 1. Attempt ASN lookup
+   * 2. If unresolved, queue request and trigger DB update (rate-limited)
+   * 3. Retry lookup after update
+   * 4. If still unresolved, shadow-ban (configurable)
    */
-  evaluate(request: FraudCheckRequest): FraudCheckResult {
+  async evaluate(request: FraudCheckRequest): Promise<FraudCheckResult> {
     const { phone, ip } = request;
     const ipSubnet = getIpSubnet(ip);
     const ipCountry = getCountryFromIp(ip);
     const phoneCountry = getCountryFromPhone(phone);
     const phonePrefix = getPhonePrefix(phone);
 
-    // Get ASN from geoip
-    const geoData = geoip.lookup(ip);
-    const asn = this.extractAsn(geoData);
+    // Get ASN with automatic database update on miss
+    let asnResult: { resolved: boolean; asn: number | null; organization: string | null };
+    try {
+      asnResult = await resolveAsnFromIp(ip);
+    } catch (error) {
+      logger.error('ASN resolution failed', { ip, error: error instanceof Error ? error.message : String(error) });
+      asnResult = { resolved: false, asn: null, organization: null };
+    }
+    const asn = asnResult.asn;
 
     let score = 0;
     const reasons: string[] = [];
@@ -108,6 +119,30 @@ export class FraudEngine {
         shadowBan: false,
         score: 0,
         reasons: [],
+        ipSubnet,
+        ipCountry,
+        phoneCountry,
+        phonePrefix,
+        asn,
+      };
+    }
+
+    // Rule 0: Unresolved ASN after update attempt (suspicious - potential new VPN/datacenter)
+    if (!asnResult.resolved && shouldShadowBanUnresolvedAsn()) {
+      score = 100;
+      reasons.push('asn_unresolved_after_update');
+
+      logger.warn('FRAUD: ASN unresolved after database update', {
+        ip,
+        ipSubnet,
+        phone: phone.slice(0, 5) + '***',
+      });
+
+      return {
+        allowed: false,
+        shadowBan: true,
+        score,
+        reasons,
         ipSubnet,
         ipCountry,
         phoneCountry,
@@ -377,15 +412,4 @@ export class FraudEngine {
     });
   }
 
-  /**
-   * Extract ASN from geoip lookup result
-   */
-  private extractAsn(geoData: geoip.Lookup | null): number | null {
-    if (!geoData) return null;
-
-    // geoip-lite doesn't include ASN in the standard lookup
-    // For production, you'd want to use a separate ASN database
-    // For now, we'll return null and rely on the blocklist matching by IP range
-    return null;
-  }
 }

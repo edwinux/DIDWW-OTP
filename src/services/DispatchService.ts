@@ -9,7 +9,10 @@ import crypto from 'crypto';
 import type { IChannelProvider, ChannelType } from '../channels/IChannelProvider.js';
 import { FraudEngine } from './FraudEngine.js';
 import { WebhookService, type WebhookPayload } from './WebhookService.js';
+import { getShadowBanSimulator } from './ShadowBanSimulator.js';
+import { getStatusTracker } from './StatusTracker.js';
 import { OtpRequestRepository, type OtpStatus } from '../repositories/OtpRequestRepository.js';
+import { FraudRulesRepository } from '../repositories/FraudRulesRepository.js';
 import { getWebSocketServer } from '../admin/websocket.js';
 import { logger } from '../utils/logger.js';
 
@@ -97,8 +100,8 @@ export class DispatchService {
       hasWebhook: !!request.webhookUrl,
     });
 
-    // Step 1: Fraud check
-    const fraudResult = this.fraudEngine.evaluate({
+    // Step 1: Fraud check (async - may trigger ASN database update)
+    const fraudResult = await this.fraudEngine.evaluate({
       phone: request.phone,
       ip: request.ip,
       sessionId: request.sessionId,
@@ -133,26 +136,12 @@ export class DispatchService {
         reasons: fraudResult.reasons,
       });
 
-      // Update status to look like it was sent
-      this.otpRepo.updateStatus(requestId, 'sent', { channel: channels[0] });
-      this.broadcastStatusUpdate(requestId, 'sent', channels[0]);
+      // Use ShadowBanSimulator to emit realistic fake event sequence
+      // Events are stored in DB, broadcast via WebSocket, and sent via webhooks
+      const simulator = getShadowBanSimulator();
+      simulator.simulate(requestId, channels[0]);
 
-      // Send fake webhook (delayed to simulate real delivery)
-      if (request.webhookUrl) {
-        setTimeout(() => {
-          this.sendWebhook(request.webhookUrl!, {
-            event: 'otp.sent',
-            request_id: requestId,
-            session_id: request.sessionId,
-            phone: request.phone,
-            status: 'sent',
-            channel: channels[0],
-            timestamp: Date.now(),
-          });
-        }, 500 + Math.random() * 1000);
-      }
-
-      // Return fake success (shadow ban is invisible to caller)
+      // Return fake success immediately (shadow ban is invisible to caller)
       return {
         success: true,
         requestId,
@@ -293,10 +282,14 @@ export class DispatchService {
       return;
     }
 
-    // Update request status
-    const newStatus: OtpStatus = success ? 'verified' : 'rejected';
-    this.otpRepo.updateStatus(requestId, newStatus);
-    this.broadcastStatusUpdate(requestId, newStatus, request.channel || undefined);
+    // Update auth_status using StatusTracker
+    const statusTracker = getStatusTracker();
+    const newStatus = statusTracker.updateAuthStatus(requestId, success);
+
+    // Broadcast status update
+    if (newStatus) {
+      this.broadcastStatusUpdate(requestId, newStatus, request.channel || undefined);
+    }
 
     // Update fraud engine
     if (success) {
@@ -305,14 +298,19 @@ export class DispatchService {
       this.fraudEngine.recordFailure(request.phone, request.ip_subnet || '');
     }
 
+    // Record auth feedback in fraud rules repository (bug fix)
+    const fraudRepo = new FraudRulesRepository();
+    fraudRepo.recordAuthFeedback(requestId, success);
+
     // Send webhook if configured
     if (request.webhook_url) {
+      const webhookStatus = success ? 'verified' : 'rejected';
       this.sendWebhook(request.webhook_url, {
         event: success ? 'otp.verified' : 'otp.rejected',
         request_id: requestId,
         session_id: request.session_id || undefined,
         phone: request.phone,
-        status: newStatus,
+        status: webhookStatus,
         channel: request.channel || undefined,
         timestamp: Date.now(),
       });
@@ -321,7 +319,8 @@ export class DispatchService {
     logger.info('Auth feedback processed', {
       requestId,
       success,
-      newStatus,
+      authStatus: success ? 'verified' : 'wrong_code',
+      combinedStatus: newStatus,
     });
   }
 
