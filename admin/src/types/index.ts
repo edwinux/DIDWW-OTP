@@ -68,11 +68,23 @@ export interface SmsChannelStats {
   avgCost: number | null;          // placeholder for future
 }
 
+export interface PeriodStat {
+  current: number;
+  change: number | null;           // % change vs previous period
+}
+
+export interface PeriodStats {
+  total: PeriodStat;
+  verified: PeriodStat;
+  banned: PeriodStat;
+}
+
 export interface LogsStats {
   total: number;
   byStatus: Record<string, number>;
   periodCount: number;             // Count for selected time period
   trend: number | null;            // % change vs previous 24h
+  periodStats: PeriodStats;        // Total, Verified, Banned with % change
   avgFraudScore: number;
   // Channel-specific stats
   voice: VoiceChannelStats;

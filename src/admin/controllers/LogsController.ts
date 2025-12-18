@@ -271,6 +271,11 @@ export class LogsController {
       if (date_from !== undefined) timeFilter.date_from = date_from;
       if (date_to !== undefined) timeFilter.date_to = date_to;
 
+      // Get period stats with comparison (Total, Verified, Banned with % change)
+      const effectiveFrom = date_from ?? now - 24 * 60 * 60 * 1000;
+      const effectiveTo = date_to ?? now;
+      const periodStats = this.otpRepo.getPeriodStats(effectiveFrom, effectiveTo);
+
       // Get total count (within time range if specified)
       const total = this.otpRepo.countFiltered(timeFilter);
 
@@ -284,12 +289,30 @@ export class LogsController {
 
       // Get status breakdown (with time filter)
       // Shadow-banned requests should be counted as "banned", not their simulated status
+      // Records with auth_status='verified' should be counted as "verified" regardless of status field
       const statuses = this.otpRepo.getDistinctValues('status');
       const byStatus: Record<string, number> = {};
       for (const status of statuses) {
         // Count only non-banned requests for each status
         byStatus[status] = this.otpRepo.countFiltered({ ...timeFilter, status, shadow_banned: false });
       }
+
+      // Count verified by auth_status (includes records where status='delivered' but auth_status='verified')
+      const verifiedByAuth = this.otpRepo.countByAuthStatus('verified', timeFilter.date_from, timeFilter.date_to);
+      // Merge into byStatus - verified count should be auth_status based
+      if (verifiedByAuth > 0) {
+        byStatus['verified'] = verifiedByAuth;
+      }
+      // Remove 'delivered' entries that were actually verified (avoid double counting)
+      // Subtract auth_status='verified' from delivered count since those are now in verified
+      const deliveredButVerified = this.otpRepo.countDeliveredWithAuthVerified(timeFilter.date_from, timeFilter.date_to);
+      if (byStatus['delivered'] && deliveredButVerified > 0) {
+        byStatus['delivered'] -= deliveredButVerified;
+        if (byStatus['delivered'] <= 0) {
+          delete byStatus['delivered'];
+        }
+      }
+
       // Add banned count separately
       const bannedCount = this.otpRepo.countFiltered({ ...timeFilter, shadow_banned: true });
       if (bannedCount > 0) {
@@ -343,6 +366,7 @@ export class LogsController {
         total,
         periodCount,
         trend,
+        periodStats,
         byStatus,
         avgFraudScore,
         voice,

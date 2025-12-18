@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import api from '@/services/api';
 import type { LogsStats } from '@/types';
 import { StatCard, TrafficChart, StatusBreakdown, ChannelStats, EventList, TimeRangeSelector } from '@/components/dashboard';
-import { Activity, CheckCircle, ShieldAlert, Clock } from 'lucide-react';
+import { Activity, CheckCircle, ShieldBan } from 'lucide-react';
 import type { TimeRange } from '@/lib/timeRange';
 import {
   getTimeRangeTimestamps,
@@ -84,23 +84,12 @@ export default function DashboardPage() {
     );
   }
 
-  // Calculate success rate
-  const verifiedCount = stats?.byStatus?.verified || 0;
-  const totalCount = stats?.total || 1;
-  const successRate = ((verifiedCount / totalCount) * 100).toFixed(1);
-
-  // Generate sparkline data from status breakdown
-  const sparklineData = stats?.byStatus
-    ? Object.values(stats.byStatus).slice(0, 7)
-    : [10, 25, 15, 30, 20, 35, 25];
-
-  // Build trend prop - only show if we have data
-  const trendProp = stats?.trend !== null && stats?.trend !== undefined
-    ? { value: stats.trend, label: 'vs yesterday' }
-    : undefined;
-
   // Get dynamic label for time range
   const timeRangeLabel = getTimeRangeLabel(timeRange);
+
+  // Build trend props for each stat card
+  const buildTrendProp = (change: number | null) =>
+    change !== null ? { value: change, label: 'vs prev period' } : undefined;
 
   return (
     <div className="space-y-6">
@@ -110,39 +99,28 @@ export default function DashboardPage() {
         <TimeRangeSelector value={timeRange} onChange={handleTimeRangeChange} />
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {/* KPI Cards - Total, Verified, Banned with period comparison */}
+      <div className="grid gap-4 md:grid-cols-3">
         <StatCard
-          title="Total Requests"
-          value={stats?.total ?? 0}
+          title={`Total (${timeRangeLabel})`}
+          value={stats?.periodStats?.total.current ?? 0}
           icon={<Activity className="h-5 w-5" />}
-          variant="default"
-          sparklineData={sparklineData}
-        />
-        <StatCard
-          title={timeRangeLabel}
-          value={stats?.periodCount ?? 0}
-          icon={<Clock className="h-5 w-5" />}
-          trend={trendProp}
+          trend={buildTrendProp(stats?.periodStats?.total.change ?? null)}
           variant="default"
         />
         <StatCard
-          title="Success Rate"
-          value={`${successRate}%`}
+          title="Verified"
+          value={stats?.periodStats?.verified.current ?? 0}
           icon={<CheckCircle className="h-5 w-5" />}
+          trend={buildTrendProp(stats?.periodStats?.verified.change ?? null)}
           variant="success"
         />
         <StatCard
-          title="Avg Fraud Score"
-          value={stats?.avgFraudScore?.toFixed(1) ?? 'N/A'}
-          icon={<ShieldAlert className="h-5 w-5" />}
-          variant={
-            (stats?.avgFraudScore ?? 0) > 50
-              ? 'destructive'
-              : (stats?.avgFraudScore ?? 0) > 30
-              ? 'warning'
-              : 'success'
-          }
+          title="Banned"
+          value={stats?.periodStats?.banned.current ?? 0}
+          icon={<ShieldBan className="h-5 w-5" />}
+          trend={buildTrendProp(stats?.periodStats?.banned.change ?? null)}
+          variant="destructive"
         />
       </div>
 
