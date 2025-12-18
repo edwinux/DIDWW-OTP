@@ -158,6 +158,19 @@ export class AmiClient extends EventEmitter {
   private handleData(data: string): void {
     this.buffer += data;
 
+    // Special case: Asterisk greeting ends with just \r\n, not \r\n\r\n
+    // Check for greeting before splitting by \r\n\r\n
+    if (this.state === 'authenticating' && this.buffer.startsWith('Asterisk Call Manager')) {
+      const greetingEnd = this.buffer.indexOf('\r\n');
+      if (greetingEnd !== -1) {
+        const greeting = this.buffer.substring(0, greetingEnd);
+        this.buffer = this.buffer.substring(greetingEnd + 2);
+        logger.debug('AMI: Received greeting', { greeting });
+        this.authenticate();
+      }
+      return;
+    }
+
     // AMI messages are separated by \r\n\r\n
     const messages = this.buffer.split('\r\n\r\n');
     this.buffer = messages.pop() || '';
@@ -182,12 +195,6 @@ export class AmiClient extends EventEmitter {
         const value = line.substring(colonIndex + 1).trim();
         event[key] = value;
       }
-    }
-
-    // Handle Asterisk greeting
-    if (message.startsWith('Asterisk Call Manager')) {
-      this.authenticate();
-      return;
     }
 
     // Handle authentication response
