@@ -14,6 +14,7 @@ interface TrafficDataPoint {
   requests: number;
   verified: number;
   failed: number;
+  banned?: number;
 }
 
 interface TrafficChartProps {
@@ -43,6 +44,10 @@ export function TrafficChart({ data, title = 'Traffic Overview' }: TrafficChartP
                 <linearGradient id="colorFailed" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="hsl(0, 62.8%, 50.6%)" stopOpacity={0.3} />
                   <stop offset="95%" stopColor="hsl(0, 62.8%, 50.6%)" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="colorBanned" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="hsl(25, 95%, 53%)" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="hsl(25, 95%, 53%)" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid
@@ -97,6 +102,14 @@ export function TrafficChart({ data, title = 'Traffic Overview' }: TrafficChartP
                 strokeWidth={2}
                 fill="url(#colorFailed)"
               />
+              <Area
+                type="monotone"
+                dataKey="banned"
+                name="Banned"
+                stroke="hsl(25, 95%, 53%)"
+                strokeWidth={2}
+                fill="url(#colorBanned)"
+              />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -113,6 +126,10 @@ export function TrafficChart({ data, title = 'Traffic Overview' }: TrafficChartP
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-destructive" />
             <span className="text-muted-foreground">Failed</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: 'hsl(25, 95%, 53%)' }} />
+            <span className="text-muted-foreground">Banned</span>
           </div>
         </div>
       </CardContent>
