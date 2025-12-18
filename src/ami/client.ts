@@ -201,7 +201,9 @@ export class AmiClient extends EventEmitter {
     if (event['Response'] === 'Success' && this.state === 'authenticating') {
       this.state = 'connected';
       this.reconnectAttempts = 0;
-      logger.info('AMI: Authentication successful');
+      logger.info('AMI: Authentication successful, subscribing to events...');
+      // Subscribe to call events - CRITICAL: Without this, AMI won't send any events!
+      this.sendAction('Events', { EventMask: 'call' });
       this.pendingResolve?.();
       return;
     }
