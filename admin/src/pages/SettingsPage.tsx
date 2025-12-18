@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '@/services/api';
-import type { CallerIdRoute, CallerIdRoutesResponse, CallerIdTestResult } from '@/types';
+import type { CallerIdRoute, CallerIdRoutesResponse, CallerIdTestResult, WhitelistEntry, WhitelistResponse } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,15 +34,24 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
-import { Phone, MessageSquare, Plus, Pencil, Trash2, RefreshCw, FlaskConical, Check, X } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Phone, MessageSquare, Plus, Pencil, Trash2, RefreshCw, FlaskConical, Check, X, Settings, Shield, Globe, Smartphone } from 'lucide-react';
 
 type Channel = 'sms' | 'voice';
+type MainTab = 'caller-id' | 'system';
+type WhitelistType = 'ip' | 'phone';
 
 interface RouteFormData {
   prefix: string;
   caller_id: string;
   description: string;
   enabled: boolean;
+}
+
+interface WhitelistFormData {
+  type: WhitelistType;
+  value: string;
+  description: string;
 }
 
 const defaultFormData: RouteFormData = {
@@ -52,11 +61,38 @@ const defaultFormData: RouteFormData = {
   enabled: true,
 };
 
+const defaultWhitelistFormData: WhitelistFormData = {
+  type: 'ip',
+  value: '',
+  description: '',
+};
+
 export default function SettingsPage() {
+  // Main tab state
+  const [mainTab, setMainTab] = useState<MainTab>('caller-id');
+
+  // Caller ID routes state
   const [routes, setRoutes] = useState<CallerIdRoute[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Channel>('sms');
   const [stats, setStats] = useState({ sms: 0, voice: 0 });
+
+  // Whitelist state
+  const [whitelistEntries, setWhitelistEntries] = useState<WhitelistEntry[]>([]);
+  const [whitelistLoading, setWhitelistLoading] = useState(true);
+  const [whitelistFilter, setWhitelistFilter] = useState<WhitelistType | 'all'>('all');
+  const [whitelistStats, setWhitelistStats] = useState({ ip: 0, phone: 0 });
+
+  // Whitelist dialog state
+  const [whitelistDialogOpen, setWhitelistDialogOpen] = useState(false);
+  const [whitelistFormData, setWhitelistFormData] = useState<WhitelistFormData>(defaultWhitelistFormData);
+  const [whitelistFormError, setWhitelistFormError] = useState('');
+  const [whitelistSaving, setWhitelistSaving] = useState(false);
+
+  // Whitelist delete dialog state
+  const [whitelistDeleteDialogOpen, setWhitelistDeleteDialogOpen] = useState(false);
+  const [whitelistToDelete, setWhitelistToDelete] = useState<WhitelistEntry | null>(null);
+  const [whitelistDeleting, setWhitelistDeleting] = useState(false);
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -87,9 +123,23 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const fetchWhitelist = useCallback(async () => {
+    setWhitelistLoading(true);
+    try {
+      const response = await api.get<WhitelistResponse>('/admin/whitelist');
+      setWhitelistEntries(response.data.data);
+      setWhitelistStats({ ip: response.data.meta.ip, phone: response.data.meta.phone });
+    } catch (err) {
+      console.error('Failed to fetch whitelist:', err);
+    } finally {
+      setWhitelistLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchRoutes();
-  }, [fetchRoutes]);
+    fetchWhitelist();
+  }, [fetchRoutes, fetchWhitelist]);
 
   const filteredRoutes = routes.filter((r) => r.channel === activeTab);
 
@@ -203,22 +253,92 @@ export default function SettingsPage() {
     }
   };
 
+  // Whitelist handlers
+  const filteredWhitelist = whitelistFilter === 'all'
+    ? whitelistEntries
+    : whitelistEntries.filter((e) => e.type === whitelistFilter);
+
+  const openWhitelistDialog = () => {
+    setWhitelistFormData(defaultWhitelistFormData);
+    setWhitelistFormError('');
+    setWhitelistDialogOpen(true);
+  };
+
+  const handleWhitelistSave = async () => {
+    setWhitelistFormError('');
+
+    if (!whitelistFormData.value.trim()) {
+      setWhitelistFormError('Value is required');
+      return;
+    }
+
+    setWhitelistSaving(true);
+    try {
+      await api.post('/admin/whitelist', {
+        type: whitelistFormData.type,
+        value: whitelistFormData.value.trim(),
+        description: whitelistFormData.description.trim() || undefined,
+      });
+      setWhitelistDialogOpen(false);
+      fetchWhitelist();
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { message?: string } } };
+      setWhitelistFormError(error.response?.data?.message || 'Failed to add whitelist entry');
+    } finally {
+      setWhitelistSaving(false);
+    }
+  };
+
+  const handleWhitelistDelete = async () => {
+    if (!whitelistToDelete) return;
+    setWhitelistDeleting(true);
+    try {
+      await api.delete(`/admin/whitelist/${whitelistToDelete.id}`);
+      setWhitelistDeleteDialogOpen(false);
+      setWhitelistToDelete(null);
+      fetchWhitelist();
+    } catch (err) {
+      console.error('Failed to delete whitelist entry:', err);
+      alert('Failed to delete whitelist entry. Please try again.');
+    } finally {
+      setWhitelistDeleting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Settings</h1>
-          <p className="text-muted-foreground">Configure caller ID routing rules</p>
+          <p className="text-muted-foreground">Configure system settings and routing rules</p>
         </div>
-        <Button variant="outline" onClick={handleReloadCache}>
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Reload Cache
-        </Button>
       </div>
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Channel)}>
+      {/* Main Tabs */}
+      <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as MainTab)}>
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="caller-id" className="flex items-center gap-2">
+            <Phone className="h-4 w-4" />
+            Caller ID Routing
+          </TabsTrigger>
+          <TabsTrigger value="system" className="flex items-center gap-2">
+            <Settings className="h-4 w-4" />
+            System
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Caller ID Tab */}
+        <TabsContent value="caller-id" className="mt-4 space-y-6">
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={handleReloadCache}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Reload Cache
+            </Button>
+          </div>
+
+          {/* Channel Tabs */}
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Channel)}>
         <TabsList className="grid w-full max-w-md grid-cols-2">
           <TabsTrigger value="sms" className="flex items-center gap-2">
             <MessageSquare className="h-4 w-4" />
@@ -261,57 +381,148 @@ export default function SettingsPage() {
             onToggle={handleToggle}
           />
         </TabsContent>
+          </Tabs>
+
+          {/* Test Routing */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FlaskConical className="h-5 w-5" />
+                Test Routing
+              </CardTitle>
+              <CardDescription>
+                Enter a phone number to see which caller ID would be used
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-end gap-4">
+                <div className="flex-1 max-w-xs space-y-2">
+                  <Label htmlFor="test-phone">Phone Number</Label>
+                  <Input
+                    id="test-phone"
+                    placeholder="+66812345678"
+                    value={testPhone}
+                    onChange={(e) => setTestPhone(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleTestRouting()}
+                  />
+                </div>
+                <Button onClick={handleTestRouting} disabled={testing || !testPhone.trim()}>
+                  {testing ? (
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <FlaskConical className="h-4 w-4 mr-2" />
+                  )}
+                  Test
+                </Button>
+              </div>
+
+              {testResult && (
+                <div className="mt-4 grid grid-cols-2 gap-4">
+                  <TestResultCard
+                    channel="sms"
+                    result={testResult.sms}
+                  />
+                  <TestResultCard
+                    channel="voice"
+                    result={testResult.voice}
+                  />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* System Tab */}
+        <TabsContent value="system" className="mt-4 space-y-6">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Shield className="h-5 w-5" />
+                  Fraud Whitelist
+                </CardTitle>
+                <CardDescription>
+                  Whitelisted IPs and phone numbers bypass all fraud detection (score = 0)
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Select value={whitelistFilter} onValueChange={(v) => setWhitelistFilter(v as WhitelistType | 'all')}>
+                  <SelectTrigger className="w-[130px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All ({whitelistStats.ip + whitelistStats.phone})</SelectItem>
+                    <SelectItem value="ip">IP ({whitelistStats.ip})</SelectItem>
+                    <SelectItem value="phone">Phone ({whitelistStats.phone})</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button onClick={openWhitelistDialog}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Entry
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {whitelistLoading ? (
+                <div className="flex items-center justify-center h-32">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+                </div>
+              ) : filteredWhitelist.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p>No whitelist entries found.</p>
+                  <p className="text-sm mt-1">Add an IP or phone number to bypass fraud detection.</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[80px]">Type</TableHead>
+                      <TableHead>Value</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead className="w-[150px]">Added</TableHead>
+                      <TableHead className="w-[80px] text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredWhitelist.map((entry) => (
+                      <TableRow key={entry.id}>
+                        <TableCell>
+                          <Badge variant={entry.type === 'ip' ? 'default' : 'secondary'} className="flex items-center gap-1 w-fit">
+                            {entry.type === 'ip' ? <Globe className="h-3 w-3" /> : <Smartphone className="h-3 w-3" />}
+                            {entry.type.toUpperCase()}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-mono">{entry.value}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {entry.description || '-'}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-sm">
+                          {new Date(entry.created_at).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setWhitelistToDelete(entry);
+                              setWhitelistDeleteDialogOpen(true);
+                            }}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
-      {/* Test Routing */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FlaskConical className="h-5 w-5" />
-            Test Routing
-          </CardTitle>
-          <CardDescription>
-            Enter a phone number to see which caller ID would be used
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-end gap-4">
-            <div className="flex-1 max-w-xs space-y-2">
-              <Label htmlFor="test-phone">Phone Number</Label>
-              <Input
-                id="test-phone"
-                placeholder="+66812345678"
-                value={testPhone}
-                onChange={(e) => setTestPhone(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleTestRouting()}
-              />
-            </div>
-            <Button onClick={handleTestRouting} disabled={testing || !testPhone.trim()}>
-              {testing ? (
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <FlaskConical className="h-4 w-4 mr-2" />
-              )}
-              Test
-            </Button>
-          </div>
-
-          {testResult && (
-            <div className="mt-4 grid grid-cols-2 gap-4">
-              <TestResultCard
-                channel="sms"
-                result={testResult.sms}
-              />
-              <TestResultCard
-                channel="voice"
-                result={testResult.voice}
-              />
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Create/Edit Dialog */}
+      {/* Create/Edit Route Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -384,7 +595,7 @@ export default function SettingsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Route Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -398,6 +609,95 @@ export default function SettingsPage() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Add Whitelist Entry Dialog */}
+      <Dialog open={whitelistDialogOpen} onOpenChange={setWhitelistDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Whitelist Entry</DialogTitle>
+            <DialogDescription>
+              Add an IP address or phone number to bypass fraud detection
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="whitelist-type">Type</Label>
+              <Select
+                value={whitelistFormData.type}
+                onValueChange={(v) => setWhitelistFormData({ ...whitelistFormData, type: v as WhitelistType })}
+              >
+                <SelectTrigger id="whitelist-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ip">IP Address</SelectItem>
+                  <SelectItem value="phone">Phone Number</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="whitelist-value">
+                {whitelistFormData.type === 'ip' ? 'IP Address' : 'Phone Number'}
+              </Label>
+              <Input
+                id="whitelist-value"
+                placeholder={whitelistFormData.type === 'ip' ? '192.168.1.1' : '+14155551234'}
+                value={whitelistFormData.value}
+                onChange={(e) => setWhitelistFormData({ ...whitelistFormData, value: e.target.value })}
+              />
+              <p className="text-xs text-muted-foreground">
+                {whitelistFormData.type === 'ip'
+                  ? 'Enter a single IPv4 address (e.g., 192.168.1.1)'
+                  : 'Enter phone in E.164 format (e.g., +14155551234)'}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="whitelist-description">Description (optional)</Label>
+              <Input
+                id="whitelist-description"
+                placeholder="VIP customer, Testing, Office IP..."
+                value={whitelistFormData.description}
+                onChange={(e) => setWhitelistFormData({ ...whitelistFormData, description: e.target.value })}
+              />
+            </div>
+
+            {whitelistFormError && (
+              <p className="text-sm text-destructive">{whitelistFormError}</p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWhitelistDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleWhitelistSave} disabled={whitelistSaving}>
+              {whitelistSaving ? 'Adding...' : 'Add'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Whitelist Entry Confirmation Dialog */}
+      <AlertDialog open={whitelistDeleteDialogOpen} onOpenChange={setWhitelistDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Whitelist Entry?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove "{whitelistToDelete?.value}" from the whitelist.
+              Requests from this {whitelistToDelete?.type} will be subject to fraud detection again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={whitelistDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleWhitelistDelete} disabled={whitelistDeleting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {whitelistDeleting ? 'Deleting...' : 'Delete'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
