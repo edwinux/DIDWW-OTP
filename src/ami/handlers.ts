@@ -79,7 +79,7 @@ function getCauseInfo(cause: number): { description: string; isFailure: boolean 
  * Handle AMI Hangup event
  */
 function handleHangup(event: AmiHangupEvent): void {
-  const { channel, cause, causeText, uniqueid } = event;
+  const { channel, cause, causeText, uniqueid, connectedLineNum } = event;
   const tracker = getCallTracker();
 
   // Only process PJSIP channels (our SIP trunk)
@@ -89,12 +89,30 @@ function handleHangup(event: AmiHangupEvent): void {
 
   const causeInfo = getCauseInfo(cause);
 
-  // Find the associated request
-  const requestId = findRequestIdFromChannel(channel);
+  // Find the associated request - try multiple correlation methods
+  let requestId = findRequestIdFromChannel(channel);
+
+  // Fallback: use ConnectedLineNum (destination phone) for correlation
+  // This handles cases where channel is PJSIP/didww-00000000 instead of PJSIP/{phone}-xxx
+  if (!requestId && connectedLineNum) {
+    requestId = tracker.findRequestByPhone(connectedLineNum);
+    if (requestId) {
+      logger.debug('AMI: Correlated hangup via ConnectedLineNum', {
+        channel,
+        connectedLineNum,
+        requestId,
+      });
+    }
+  }
 
   if (!requestId) {
     // This hangup is for a call we're not tracking (possibly already handled by ARI)
-    logger.debug('AMI: Hangup for untracked channel', { channel, cause, causeText });
+    logger.debug('AMI: Hangup for untracked channel', {
+      channel,
+      cause,
+      causeText,
+      connectedLineNum,
+    });
     return;
   }
 

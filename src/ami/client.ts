@@ -268,7 +268,15 @@ export class AmiClient extends EventEmitter {
         connectedLineNum: event['ConnectedLineNum'],
       };
 
-      logger.debug('AMI: Hangup event received', hangupEvent);
+      // Log all Hangup event details for debugging correlation issues
+      logger.info('AMI: Hangup event received', {
+        channel: hangupEvent.channel,
+        cause: hangupEvent.cause,
+        causeText: hangupEvent.causeText,
+        callerIdNum: hangupEvent.callerIdNum,
+        connectedLineNum: hangupEvent.connectedLineNum,
+        uniqueid: hangupEvent.uniqueid,
+      });
       this.emit('hangup', hangupEvent);
     }
 
