@@ -772,7 +772,7 @@ export class OtpRequestRepository {
         SUM(CASE WHEN shadow_banned = 0 AND auth_status = 'verified' THEN 1 ELSE 0 END) as verified,
         AVG(CASE WHEN shadow_banned = 0 AND answer_time IS NOT NULL AND end_time IS NOT NULL
             THEN (end_time - answer_time) / 1000.0 ELSE NULL END) as avgDuration,
-        AVG(CASE WHEN shadow_banned = 0 AND sms_cost_units IS NOT NULL THEN sms_cost_units ELSE NULL END) as avgCostUnits,
+        AVG(CASE WHEN shadow_banned = 0 AND sms_cost_units IS NOT NULL AND sms_cost_units > 0 THEN sms_cost_units ELSE NULL END) as avgCostUnits,
         SUM(CASE WHEN shadow_banned = 0 AND sms_cost_units IS NOT NULL THEN sms_cost_units ELSE NULL END) as totalCostUnits
       FROM otp_requests
       WHERE ${whereClause}
