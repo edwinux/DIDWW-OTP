@@ -132,7 +132,7 @@ export default function DashboardPage() {
         />
         <ChannelStats
           channel="sms"
-          stats={stats?.sms ?? { total: 0, deliverySuccessRate: 0, authSuccessRate: 0, avgCost: null }}
+          stats={stats?.sms ?? { total: 0, deliverySuccessRate: 0, authSuccessRate: 0, avgCost: null, totalCost: null }}
         />
       </div>
 

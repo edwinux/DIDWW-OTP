@@ -354,7 +354,9 @@ export class LogsController {
         total: smsRaw.total,
         deliverySuccessRate: smsRaw.total > 0 ? Math.round((smsRaw.delivered / smsRaw.total) * 100) : 0,
         authSuccessRate: smsRaw.total > 0 ? Math.round((smsRaw.verified / smsRaw.total) * 100) : 0,
-        avgCost: null, // Placeholder for future
+        // Convert cost units (1/10000 dollars) to USD
+        avgCost: smsRaw.avgCostUnits !== null ? smsRaw.avgCostUnits / 10000 : null,
+        totalCost: smsRaw.totalCostUnits !== null && smsRaw.totalCostUnits > 0 ? smsRaw.totalCostUnits / 10000 : null,
       };
 
       // Get recent events - ALWAYS last 5, NOT filtered by time range
