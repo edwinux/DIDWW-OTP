@@ -9,6 +9,7 @@ import { getConfig } from '../config/index.js';
 import { logger } from '../utils/logger.js';
 import { generateOtpTts } from '../utils/tts.js';
 import { emitOtpEvent } from '../services/OtpEventService.js';
+import { registerCallForAmi, unregisterCallFromAmi } from '../ami/handlers.js';
 
 /**
  * Call state tracking
@@ -65,6 +66,9 @@ export function registerStasisHandlers(client: AriClient): void {
   client.on('StasisEnd', (_event, channel) => {
     const callId = channel.id;
     const callState = activeCalls.get(callId);
+
+    // Unregister from AMI tracking (call completed via ARI)
+    unregisterCallFromAmi(`PJSIP/${callState?.phone || ''}`);
 
     if (callState && !callState.systemHangup) {
       // User hung up before system did
@@ -219,6 +223,10 @@ export async function originateOtpCall(
         'CALLERID(name)': callerId,
       },
     });
+
+    // Register with AMI for SIP failure detection (e.g., 486 Busy)
+    const channelPattern = `PJSIP/${phone}`;
+    registerCallForAmi(channelPattern, callId);
 
     // Emit ringing event after successful originate
     emitOtpEvent(callId, 'voice', 'ringing');
