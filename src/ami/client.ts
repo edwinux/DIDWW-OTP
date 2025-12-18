@@ -278,8 +278,8 @@ export class AmiClient extends EventEmitter {
 
       // Only process PJSIP/didww channels (our outbound trunk)
       if (destChannel.startsWith('PJSIP/didww') && dialString) {
-        // Extract phone number from DialString: "PJSIP/66620054833@didww" -> "66620054833"
-        const phoneMatch = dialString.match(/^PJSIP\/(\d+)@/);
+        // Extract phone number from DialString: "+66620054833@didww" -> "66620054833"
+        const phoneMatch = dialString.match(/^\+?(\d+)@/);
         const phone = phoneMatch ? phoneMatch[1] : '';
 
         if (phone) {
