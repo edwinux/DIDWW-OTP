@@ -14,8 +14,8 @@ protocol=udp
 bind=0.0.0.0:${SIP_PORT}
 external_media_address=${PUBLIC_IP}
 external_signaling_address=${PUBLIC_IP}
-; Apply ACL to reject traffic from non-DIDWW sources
-acl=didww-only
+; Note: SIP traffic restriction is handled at OS level (UFW firewall)
+; PJSIP transports do not support the 'acl' option
 
 ; -----------------------------------------------------------------------------
 ; DIDWW Authentication (used for outbound INVITE requests)
