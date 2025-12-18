@@ -100,7 +100,13 @@ export class FraudEngine {
     const phonePrefix = getPhonePrefix(phone);
 
     // Get ASN with automatic database update on miss
-    const asnResult = await resolveAsnFromIp(ip);
+    let asnResult: { resolved: boolean; asn: number | null; organization: string | null };
+    try {
+      asnResult = await resolveAsnFromIp(ip);
+    } catch (error) {
+      logger.error('ASN resolution failed', { ip, error: error instanceof Error ? error.message : String(error) });
+      asnResult = { resolved: false, asn: null, organization: null };
+    }
     const asn = asnResult.asn;
 
     let score = 0;
