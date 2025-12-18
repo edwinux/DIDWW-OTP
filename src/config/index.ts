@@ -124,10 +124,10 @@ const configSchema = z.object({
 
   // AMI (Asterisk Manager Interface) configuration for SIP failure detection
   ami: z.object({
-    enabled: z.coerce.boolean().default(false),
+    enabled: z.coerce.boolean().default(true),
     host: z.string().default('localhost'),
     port: z.coerce.number().int().min(1).max(65535).default(5038),
-    username: z.string().default('admin'),
+    username: z.string().default('otp-gateway'),
     secret: z.string().optional(),
   }),
 
