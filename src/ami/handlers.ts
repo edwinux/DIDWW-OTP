@@ -6,10 +6,38 @@
  * Uses CallTrackerService for call correlation.
  */
 
-import { getAmiClient, type AmiHangupEvent, type AmiNewchannelEvent } from './client.js';
+import { getAmiClient, type AmiHangupEvent, type AmiNewchannelEvent, type AmiSipCauseEvent } from './client.js';
 import { emitOtpEvent } from '../services/OtpEventService.js';
 import { logger } from '../utils/logger.js';
 import { getCallTracker } from '../services/CallTrackerService.js';
+
+/**
+ * SIP response code descriptions (from DIDWW documentation)
+ * These provide more accurate error messages than Q.850 cause codes
+ */
+const SIP_CODES: Record<number, string> = {
+  400: 'Bad Request',
+  401: 'Unauthorized',
+  403: 'Forbidden',
+  404: 'Number not found',
+  408: 'Request timeout',
+  480: 'Temporarily unavailable',
+  486: 'User busy',
+  487: 'Request terminated',
+  488: 'Not acceptable',
+  500: 'Server error',
+  502: 'Bad gateway',
+  503: 'Service unavailable',
+  504: 'Server timeout',
+  600: 'Busy everywhere',
+  603: 'Decline',
+};
+
+/**
+ * Store SIP codes by channel for correlation with hangup events
+ * SIP cause arrives via UserEvent before Hangup event
+ */
+const sipCauseByChannel = new Map<string, { sipCode: number; sipCause: string }>();
 
 /**
  * Q.850 cause code descriptions
@@ -137,32 +165,57 @@ function handleHangup(event: AmiHangupEvent): void {
     // End call and get durations
     const result = tracker.endCall(requestId);
 
-    // Refine cause 0 description based on call state
-    // Cause 0 happens when Asterisk sends CANCEL (e.g., ringing timeout)
-    // If call was ringing, it's "No answer"; otherwise "No response"
-    let description = causeInfo.description;
-    if (cause === 0) {
-      const wasRinging = result?.durations.ringDurationMs && result.durations.ringDurationMs > 0;
-      description = wasRinging
-        ? 'No answer (ringing timeout)'
-        : 'Call failed (no response from network)';
+    // Check if we have a SIP code for this channel (more accurate than Q.850)
+    const sipInfo = sipCauseByChannel.get(channel);
+    sipCauseByChannel.delete(channel); // Clean up
+
+    let description: string;
+    let errorMessage: string;
+
+    if (sipInfo && sipInfo.sipCode > 0) {
+      // Use SIP response code for accurate error message
+      const sipDescription = SIP_CODES[sipInfo.sipCode] || 'Unknown error';
+      description = `${sipDescription} (SIP ${sipInfo.sipCode})`;
+      errorMessage = `Voice call failed: ${sipDescription} (SIP ${sipInfo.sipCode})`;
+
+      logger.info('AMI: SIP call failure detected', {
+        requestId,
+        channel,
+        sipCode: sipInfo.sipCode,
+        sipDescription,
+        q850Cause: cause,
+        ringDurationMs: result?.durations.ringDurationMs,
+      });
+    } else {
+      // Fall back to Q.850 cause code
+      // Refine cause 0 description based on call state
+      if (cause === 0) {
+        const wasRinging = result?.durations.ringDurationMs && result.durations.ringDurationMs > 0;
+        description = wasRinging
+          ? 'No answer (ringing timeout)'
+          : 'Call failed (no response from network)';
+      } else {
+        description = causeInfo.description;
+      }
+      errorMessage = `Voice call failed: ${description} (Q.850 cause ${cause})`;
+
+      logger.info('AMI: SIP call failure detected', {
+        requestId,
+        channel,
+        cause,
+        causeText: description,
+        ringDurationMs: result?.durations.ringDurationMs,
+      });
     }
 
-    logger.info('AMI: SIP call failure detected', {
-      requestId,
-      channel,
-      cause,
-      causeText: description,
-      ringDurationMs: result?.durations.ringDurationMs,
-    });
-
-    // Emit voice:failed event with Q.850 details and durations
+    // Emit voice:failed event with details and durations
     // Include 'error' field for storage in error_message column
-    const errorMessage = `Voice call failed: ${description} (Q.850 cause ${cause})`;
     emitOtpEvent(requestId, 'voice', 'failed', {
       error: errorMessage,
       q850_cause: cause,
-      q850_description: description,
+      q850_description: causeInfo.description,
+      sip_code: sipInfo?.sipCode,
+      sip_cause: sipInfo?.sipCause,
       ami_cause_text: causeText,
       channel,
       uniqueid,
@@ -222,6 +275,27 @@ export function registerAmiHandlers(): void {
       tracker.registerAmiChannel(event.exten, event.channel);
     } catch (error) {
       logger.error('AMI: Error handling newchannel event', {
+        error: error instanceof Error ? error.message : String(error),
+        event,
+      });
+    }
+  });
+
+  // Handle SIP cause events from dialplan UserEvent
+  // This provides actual SIP response codes (404, 486, 487, etc.)
+  client.on('sipcause', (event: AmiSipCauseEvent) => {
+    try {
+      // Store SIP cause for later correlation with Hangup event
+      sipCauseByChannel.set(event.channel, {
+        sipCode: event.sipCode,
+        sipCause: event.sipCause,
+      });
+      logger.debug('AMI: Stored SIP cause for channel', {
+        channel: event.channel,
+        sipCode: event.sipCode,
+      });
+    } catch (error) {
+      logger.error('AMI: Error handling sipcause event', {
         error: error instanceof Error ? error.message : String(error),
         event,
       });

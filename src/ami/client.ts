@@ -42,6 +42,17 @@ export interface AmiNewchannelEvent {
 }
 
 /**
+ * AMI SIP cause event data - captured from dialplan UserEvent
+ * Contains actual SIP response code (e.g., 404, 486, 487, 503)
+ */
+export interface AmiSipCauseEvent {
+  channel: string;
+  uniqueid: string;
+  sipCode: number;
+  sipCause: string; // e.g., "SIP 487 Request Terminated"
+}
+
+/**
  * AMI connection states
  */
 type AmiState = 'disconnected' | 'connecting' | 'authenticating' | 'connected';
@@ -337,6 +348,29 @@ export class AmiClient extends EventEmitter {
         uniqueid: hangupEvent.uniqueid,
       });
       this.emit('hangup', hangupEvent);
+    }
+
+    // Capture UserEvent with SIP cause code from dialplan hangup handler
+    if (eventType === 'UserEvent' && event['UserEvent'] === 'SIPCause') {
+      const sipCodeStr = event['SIPCode'] || '';
+      const sipCode = parseInt(sipCodeStr, 10);
+
+      if (sipCode > 0) {
+        const sipCauseEvent: AmiSipCauseEvent = {
+          channel: event['Channel'] || '',
+          uniqueid: event['Uniqueid'] || '',
+          sipCode,
+          sipCause: event['SIPCause'] || '',
+        };
+
+        logger.info('AMI: SIP cause received', {
+          channel: sipCauseEvent.channel,
+          sipCode: sipCauseEvent.sipCode,
+          sipCause: sipCauseEvent.sipCause,
+          uniqueid: sipCauseEvent.uniqueid,
+        });
+        this.emit('sipcause', sipCauseEvent);
+      }
     }
 
     // Emit raw event for extensibility
