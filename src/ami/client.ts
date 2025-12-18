@@ -48,6 +48,8 @@ export class AmiClient extends EventEmitter {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
   private reconnectDelayMs = 5000;
+  private pendingResolve: (() => void) | null = null;
+  private pendingReject: ((err: Error) => void) | null = null;
 
   /**
    * Connect to Asterisk AMI
@@ -58,34 +60,65 @@ export class AmiClient extends EventEmitter {
 
     return new Promise((resolve, reject) => {
       this.socket = new net.Socket();
+      let settled = false;
 
-      const connectTimeout = setTimeout(() => {
-        reject(new Error('AMI connection timeout'));
-        this.socket?.destroy();
-      }, 10000);
+      // Overall timeout for connection + authentication (15 seconds)
+      const overallTimeout = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          this.pendingResolve = null;
+          this.pendingReject = null;
+          logger.error('AMI: Connection/authentication timeout after 15s');
+          reject(new Error('AMI connection/authentication timeout'));
+          this.socket?.destroy();
+        }
+      }, 15000);
+
+      // Safe resolve that can only fire once
+      this.pendingResolve = () => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(overallTimeout);
+          this.pendingResolve = null;
+          this.pendingReject = null;
+          resolve();
+        }
+      };
+
+      // Safe reject that can only fire once
+      this.pendingReject = (err: Error) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(overallTimeout);
+          this.pendingResolve = null;
+          this.pendingReject = null;
+          reject(err);
+        }
+      };
 
       this.socket.on('connect', () => {
-        clearTimeout(connectTimeout);
         logger.info('AMI: TCP connection established', { host: config.host, port: config.port });
         this.state = 'authenticating';
         // Asterisk sends a greeting, then we authenticate
       });
 
       this.socket.on('data', (data) => {
-        this.handleData(data.toString(), resolve, reject);
+        this.handleData(data.toString());
       });
 
       this.socket.on('error', (err) => {
-        clearTimeout(connectTimeout);
         logger.error('AMI: Socket error', { error: err.message });
         if (this.state === 'connecting' || this.state === 'authenticating') {
-          reject(err);
+          this.pendingReject?.(err);
         }
         this.handleDisconnect();
       });
 
       this.socket.on('close', () => {
         logger.warn('AMI: Connection closed');
+        if (this.state === 'authenticating') {
+          this.pendingReject?.(new Error('AMI connection closed during authentication'));
+        }
         this.handleDisconnect();
       });
 
@@ -122,11 +155,7 @@ export class AmiClient extends EventEmitter {
   /**
    * Handle incoming data from AMI
    */
-  private handleData(
-    data: string,
-    connectResolve?: (value: void) => void,
-    connectReject?: (reason: Error) => void
-  ): void {
+  private handleData(data: string): void {
     this.buffer += data;
 
     // AMI messages are separated by \r\n\r\n
@@ -135,18 +164,14 @@ export class AmiClient extends EventEmitter {
 
     for (const message of messages) {
       if (!message.trim()) continue;
-      this.parseMessage(message, connectResolve, connectReject);
+      this.parseMessage(message);
     }
   }
 
   /**
    * Parse an AMI message
    */
-  private parseMessage(
-    message: string,
-    connectResolve?: (value: void) => void,
-    connectReject?: (reason: Error) => void
-  ): void {
+  private parseMessage(message: string): void {
     const lines = message.split('\r\n');
     const event: Record<string, string> = {};
 
@@ -170,14 +195,14 @@ export class AmiClient extends EventEmitter {
       this.state = 'connected';
       this.reconnectAttempts = 0;
       logger.info('AMI: Authentication successful');
-      connectResolve?.();
+      this.pendingResolve?.();
       return;
     }
 
     if (event['Response'] === 'Error' && this.state === 'authenticating') {
       const error = new Error(`AMI authentication failed: ${event['Message']}`);
       logger.error('AMI: Authentication failed', { message: event['Message'] });
-      connectReject?.(error);
+      this.pendingReject?.(error);
       return;
     }
 
