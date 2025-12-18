@@ -13,6 +13,7 @@ import { registerAmiHandlers } from './ami/handlers.js';
 import { OtpRequestRepository, FraudRulesRepository, WebhookLogRepository } from './repositories/index.js';
 import { SmsChannelProvider, VoiceChannelProvider } from './channels/index.js';
 import { FraudEngine, WebhookService, DispatchService } from './services/index.js';
+import { initAsnDatabase, getAsnDatabase } from './services/AsnDatabase.js';
 import { createServer } from './server.js';
 import { startAdminServer } from './admin/index.js';
 import { logger } from './utils/logger.js';
@@ -34,6 +35,18 @@ async function main(): Promise<void> {
     dbManager.connect(config.database.path);
     runMigrations();
     seedAsnBlocklist();
+
+    // Initialize ASN database for fraud detection
+    logger.info('Initializing ASN database...', { enabled: config.asn.enabled });
+    await initAsnDatabase({
+      enabled: config.asn.enabled,
+      dataPath: config.asn.dataPath,
+      updateIntervalHours: config.asn.updateIntervalHours,
+      updateRateLimitHours: config.asn.updateRateLimitHours,
+      unresolvedThreshold: config.asn.unresolvedThreshold,
+      cdnUrl: config.asn.cdnUrl,
+      shadowBanUnresolved: config.asn.shadowBanUnresolved,
+    });
 
     // Initialize repositories
     const otpRepo = new OtpRequestRepository();
@@ -102,6 +115,7 @@ async function main(): Promise<void> {
     const shutdown = async (signal: string) => {
       logger.info(`Received ${signal}, shutting down...`);
       await ariManager.disconnect();
+      getAsnDatabase().stopPeriodicUpdates();
       dbManager.close();
       process.exit(0);
     };

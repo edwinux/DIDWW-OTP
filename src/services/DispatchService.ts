@@ -100,8 +100,8 @@ export class DispatchService {
       hasWebhook: !!request.webhookUrl,
     });
 
-    // Step 1: Fraud check
-    const fraudResult = this.fraudEngine.evaluate({
+    // Step 1: Fraud check (async - may trigger ASN database update)
+    const fraudResult = await this.fraudEngine.evaluate({
       phone: request.phone,
       ip: request.ip,
       sessionId: request.sessionId,

@@ -131,6 +131,17 @@ const configSchema = z.object({
     username: z.string().default('admin'),
     secret: z.string().optional(),
   }),
+
+  // ASN Database configuration for fraud detection
+  asn: z.object({
+    enabled: z.coerce.boolean().default(true),
+    dataPath: z.string().default('/data/asn.mmdb'),
+    updateIntervalHours: z.coerce.number().int().min(1).max(8760).default(168), // Weekly
+    updateRateLimitHours: z.coerce.number().int().min(0).max(24).default(1), // Max once per hour
+    unresolvedThreshold: z.coerce.number().int().min(1).max(10000).default(100),
+    cdnUrl: z.string().default('https://cdn.jsdelivr.net/npm/@ip-location-db/asn-mmdb/asn.mmdb'),
+    shadowBanUnresolved: z.coerce.boolean().default(true), // Shadow-ban if ASN unresolved after update
+  }),
 });
 
 /**
@@ -221,6 +232,15 @@ function parseEnvVars(): Record<string, unknown> {
       username: process.env.AMI_USERNAME,
       secret: process.env.AMI_SECRET,
     },
+    asn: {
+      enabled: process.env.ASN_ENABLED,
+      dataPath: process.env.ASN_DATA_PATH,
+      updateIntervalHours: process.env.ASN_UPDATE_INTERVAL_HOURS,
+      updateRateLimitHours: process.env.ASN_UPDATE_RATE_LIMIT_HOURS,
+      unresolvedThreshold: process.env.ASN_UNRESOLVED_THRESHOLD,
+      cdnUrl: process.env.ASN_CDN_URL,
+      shadowBanUnresolved: process.env.ASN_SHADOW_BAN_UNRESOLVED,
+    },
   };
 }
 
@@ -273,6 +293,7 @@ function maskSecrets(config: Config): Record<string, unknown> {
       password: config.admin.password ? '***MASKED***' : undefined,
       sessionSecret: config.admin.sessionSecret ? '***MASKED***' : undefined,
     },
+    asn: config.asn,
   };
 }
 
