@@ -10,7 +10,7 @@ import { ariManager } from './ari/client.js';
 import { registerStasisHandlers } from './ari/handlers.js';
 import { getAmiClient } from './ami/client.js';
 import { registerAmiHandlers } from './ami/handlers.js';
-import { OtpRequestRepository, FraudRulesRepository, WebhookLogRepository } from './repositories/index.js';
+import { OtpRequestRepository, FraudRulesRepository, WebhookLogRepository, WhitelistRepository } from './repositories/index.js';
 import { SmsChannelProvider, VoiceChannelProvider } from './channels/index.js';
 import { FraudEngine, WebhookService, DispatchService } from './services/index.js';
 import { initializeCallerIdRouter } from './services/CallerIdRouter.js';
@@ -58,6 +58,7 @@ async function main(): Promise<void> {
     const otpRepo = new OtpRequestRepository();
     const fraudRepo = new FraudRulesRepository();
     const webhookLogRepo = new WebhookLogRepository();
+    const whitelistRepo = new WhitelistRepository();
 
     // Initialize channel providers
     const channelProviders = [];
@@ -86,7 +87,7 @@ async function main(): Promise<void> {
     channelProviders.push(voiceProvider);
 
     // Initialize services
-    const fraudEngine = new FraudEngine(fraudRepo, otpRepo, {
+    const fraudEngine = new FraudEngine(fraudRepo, otpRepo, whitelistRepo, {
       enabled: config.fraud.enabled,
       shadowBanThreshold: config.fraud.shadowBanThreshold,
       rateLimitPerHour: config.fraud.rateLimitPerHour,

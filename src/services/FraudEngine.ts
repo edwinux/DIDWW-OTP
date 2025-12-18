@@ -7,6 +7,7 @@
 
 import { FraudRulesRepository } from '../repositories/FraudRulesRepository.js';
 import { OtpRequestRepository } from '../repositories/OtpRequestRepository.js';
+import { WhitelistRepository } from '../repositories/WhitelistRepository.js';
 import { getCountryFromIp, getCountryFromPhone, getPhonePrefix, resolveAsnFromIp, shouldShadowBanUnresolvedAsn } from '../utils/geoip.js';
 import { getIpSubnet } from '../utils/ipv6.js';
 import { logger } from '../utils/logger.js';
@@ -70,15 +71,18 @@ const DEFAULT_CONFIG: FraudEngineConfig = {
 export class FraudEngine {
   private fraudRepo: FraudRulesRepository;
   private otpRepo: OtpRequestRepository;
+  private whitelistRepo: WhitelistRepository;
   private config: FraudEngineConfig;
 
   constructor(
     fraudRepo: FraudRulesRepository,
     otpRepo: OtpRequestRepository,
+    whitelistRepo: WhitelistRepository,
     config?: Partial<FraudEngineConfig>
   ) {
     this.fraudRepo = fraudRepo;
     this.otpRepo = otpRepo;
+    this.whitelistRepo = whitelistRepo;
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
@@ -119,6 +123,31 @@ export class FraudEngine {
         shadowBan: false,
         score: 0,
         reasons: [],
+        ipSubnet,
+        ipCountry,
+        phoneCountry,
+        phonePrefix,
+        asn,
+      };
+    }
+
+    // Whitelist check: bypass all fraud rules for whitelisted IPs or phones
+    if (
+      this.whitelistRepo.isWhitelisted('ip', ip) ||
+      this.whitelistRepo.isWhitelisted('phone', phone)
+    ) {
+      logger.info('Fraud: Whitelisted request bypass', {
+        ip,
+        ipWhitelisted: this.whitelistRepo.isWhitelisted('ip', ip),
+        phoneWhitelisted: this.whitelistRepo.isWhitelisted('phone', phone),
+        phone: phone.slice(0, 5) + '***',
+      });
+
+      return {
+        allowed: true,
+        shadowBan: false,
+        score: 0,
+        reasons: ['whitelisted'],
         ipSubnet,
         ipCountry,
         phoneCountry,

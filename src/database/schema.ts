@@ -10,7 +10,7 @@ import { logger } from '../utils/logger.js';
 /**
  * Schema version for migration tracking
  */
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 /**
  * SQL schema definitions
@@ -208,6 +208,23 @@ ALTER TABLE otp_requests ADD COLUMN sms_cost_units INTEGER;
 `;
 
 /**
+ * V7 Migration: Add fraud whitelist table for IP and phone number whitelisting
+ */
+const V7_MIGRATION_SQL = `
+-- Fraud whitelist for bypassing fraud detection
+CREATE TABLE IF NOT EXISTS fraud_whitelist (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  type TEXT NOT NULL CHECK(type IN ('ip', 'phone')),
+  value TEXT NOT NULL,
+  description TEXT,
+  created_at INTEGER NOT NULL,
+  UNIQUE(type, value)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fraud_whitelist_type_value ON fraud_whitelist(type, value);
+`;
+
+/**
  * Run database migrations
  */
 export function runMigrations(): void {
@@ -302,6 +319,20 @@ export function runMigrations(): void {
       // Column might already exist
       const msg = err instanceof Error ? err.message : String(err);
       if (!msg.includes('duplicate column')) {
+        throw err;
+      }
+    }
+  }
+
+  // Run V7 migration if upgrading from V6 or earlier
+  if (currentVersion < 7) {
+    logger.info('Applying V7 migration...', { from: currentVersion, to: 7 });
+    try {
+      db.exec(V7_MIGRATION_SQL);
+    } catch (err) {
+      // Table might already exist
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('already exists')) {
         throw err;
       }
     }
