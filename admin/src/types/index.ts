@@ -71,7 +71,7 @@ export interface SmsChannelStats {
 export interface LogsStats {
   total: number;
   byStatus: Record<string, number>;
-  last24h: number;
+  periodCount: number;             // Count for selected time period
   trend: number | null;            // % change vs previous 24h
   avgFraudScore: number;
   // Channel-specific stats
