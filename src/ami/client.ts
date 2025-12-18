@@ -254,6 +254,9 @@ export class AmiClient extends EventEmitter {
   private handleEvent(event: Record<string, string>): void {
     const eventType = event['Event'];
 
+    // Log all AMI events (INFO level to verify subscription is working)
+    logger.info('AMI: Event received', { type: eventType, channel: event['Channel'] });
+
     // We're primarily interested in Hangup events for SIP failure detection
     if (eventType === 'Hangup') {
       const hangupEvent: AmiHangupEvent = {
