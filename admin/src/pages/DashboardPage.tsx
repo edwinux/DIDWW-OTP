@@ -1,33 +1,55 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import api from '@/services/api';
 import type { LogsStats } from '@/types';
-import { StatCard, TrafficChart, StatusBreakdown, ChannelStats, EventList } from '@/components/dashboard';
+import { StatCard, TrafficChart, StatusBreakdown, ChannelStats, EventList, TimeRangeSelector } from '@/components/dashboard';
 import { Activity, CheckCircle, ShieldAlert, Clock } from 'lucide-react';
+import type { TimeRange } from '@/lib/timeRange';
+import {
+  getTimeRangeTimestamps,
+  getTimeRangeLabel,
+  parseTimeRangeFromUrl,
+  timeRangeToUrlParams,
+} from '@/lib/timeRange';
 
 interface TrafficDataPoint {
   time: string;
   requests: number;
   verified: number;
   failed: number;
+  banned: number;
 }
 
 export default function DashboardPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [stats, setStats] = useState<LogsStats | null>(null);
   const [trafficData, setTrafficData] = useState<TrafficDataPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  // Initialize time range from URL or default to 24h
+  const [timeRange, setTimeRange] = useState<TimeRange>(() =>
+    parseTimeRangeFromUrl(searchParams)
+  );
 
-  const fetchData = async () => {
+  // Update URL when time range changes
+  const handleTimeRangeChange = useCallback((range: TimeRange) => {
+    setTimeRange(range);
+    setSearchParams(timeRangeToUrlParams(range));
+  }, [setSearchParams]);
+
+  const fetchData = useCallback(async () => {
     try {
+      const params = getTimeRangeTimestamps(timeRange);
+      const queryParams = new URLSearchParams();
+      if (params.date_from) queryParams.set('date_from', String(params.date_from));
+      if (params.date_to) queryParams.set('date_to', String(params.date_to));
+      if (params.granularity) queryParams.set('granularity', params.granularity);
+
+      const queryString = queryParams.toString();
       const [statsRes, trafficRes] = await Promise.all([
-        api.get('/admin/logs/stats'),
-        api.get('/admin/logs/hourly-traffic'),
+        api.get(`/admin/logs/stats${queryString ? `?${queryString}` : ''}`),
+        api.get(`/admin/logs/hourly-traffic${queryString ? `?${queryString}` : ''}`),
       ]);
       setStats(statsRes.data);
       setTrafficData(trafficRes.data.data || []);
@@ -38,7 +60,13 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [timeRange]);
+
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
+  }, [fetchData]);
 
   if (loading) {
     return (
@@ -71,8 +99,17 @@ export default function DashboardPage() {
     ? { value: stats.trend, label: 'vs yesterday' }
     : undefined;
 
+  // Get dynamic label for time range
+  const timeRangeLabel = getTimeRangeLabel(timeRange);
+
   return (
     <div className="space-y-6">
+      {/* Header with Time Range Selector */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <TimeRangeSelector value={timeRange} onChange={handleTimeRangeChange} />
+      </div>
+
       {/* KPI Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
@@ -83,8 +120,8 @@ export default function DashboardPage() {
           sparklineData={sparklineData}
         />
         <StatCard
-          title="Last 24 Hours"
-          value={stats?.last24h ?? 0}
+          title={timeRangeLabel}
+          value={stats?.periodCount ?? 0}
           icon={<Clock className="h-5 w-5" />}
           trend={trendProp}
           variant="default"
@@ -124,7 +161,7 @@ export default function DashboardPage() {
       {/* Charts Row */}
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <TrafficChart data={trafficData} title="24-Hour Traffic" />
+          <TrafficChart data={trafficData} title={`${timeRangeLabel} Traffic`} />
         </div>
         <StatusBreakdown data={stats?.byStatus ?? {}} />
       </div>
