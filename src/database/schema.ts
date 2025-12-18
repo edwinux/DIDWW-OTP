@@ -10,7 +10,7 @@ import { logger } from '../utils/logger.js';
 /**
  * Schema version for migration tracking
  */
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 /**
  * SQL schema definitions
@@ -188,6 +188,16 @@ CREATE INDEX IF NOT EXISTS idx_caller_id_routes_enabled ON caller_id_routes(enab
 `;
 
 /**
+ * V5 Migration: Add call timing columns for voice duration tracking
+ */
+const V5_MIGRATION_SQL = `
+-- Add call timing columns for voice channel duration tracking
+ALTER TABLE otp_requests ADD COLUMN start_time INTEGER;
+ALTER TABLE otp_requests ADD COLUMN answer_time INTEGER;
+ALTER TABLE otp_requests ADD COLUMN end_time INTEGER;
+`;
+
+/**
  * Run database migrations
  */
 export function runMigrations(): void {
@@ -254,6 +264,20 @@ export function runMigrations(): void {
       // Table might already exist if schema was created fresh with V4
       const msg = err instanceof Error ? err.message : String(err);
       if (!msg.includes('already exists')) {
+        throw err;
+      }
+    }
+  }
+
+  // Run V5 migration if upgrading from V4 or earlier
+  if (currentVersion < 5) {
+    logger.info('Applying V5 migration...', { from: currentVersion, to: 5 });
+    try {
+      db.exec(V5_MIGRATION_SQL);
+    } catch (err) {
+      // Columns might already exist
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('duplicate column')) {
         throw err;
       }
     }
