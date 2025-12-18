@@ -10,7 +10,7 @@ import { logger } from '../utils/logger.js';
 /**
  * Schema version for migration tracking
  */
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 /**
  * SQL schema definitions
@@ -198,6 +198,16 @@ ALTER TABLE otp_requests ADD COLUMN end_time INTEGER;
 `;
 
 /**
+ * V6 Migration: Add SMS cost tracking column
+ * Stored as INTEGER in 1/10000 dollars (0.01 cents) for precision
+ */
+const V6_MIGRATION_SQL = `
+-- Add SMS cost column for tracking total SMS cost from DIDWW DLR callbacks
+-- Stored as INTEGER in 1/10000 dollars to preserve sub-cent precision
+ALTER TABLE otp_requests ADD COLUMN sms_cost_units INTEGER;
+`;
+
+/**
  * Run database migrations
  */
 export function runMigrations(): void {
@@ -276,6 +286,20 @@ export function runMigrations(): void {
       db.exec(V5_MIGRATION_SQL);
     } catch (err) {
       // Columns might already exist
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('duplicate column')) {
+        throw err;
+      }
+    }
+  }
+
+  // Run V6 migration if upgrading from V5 or earlier
+  if (currentVersion < 6) {
+    logger.info('Applying V6 migration...', { from: currentVersion, to: 6 });
+    try {
+      db.exec(V6_MIGRATION_SQL);
+    } catch (err) {
+      // Column might already exist
       const msg = err instanceof Error ? err.message : String(err);
       if (!msg.includes('duplicate column')) {
         throw err;

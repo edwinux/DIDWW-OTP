@@ -9,6 +9,7 @@ import { z } from 'zod';
 import type { DispatchService } from '../services/DispatchService.js';
 import { OtpRequestRepository } from '../repositories/OtpRequestRepository.js';
 import { emitOtpEvent } from '../services/OtpEventService.js';
+import { SmsCost } from '../domain/SmsCost.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -210,6 +211,18 @@ export class WebhookController {
 
       // Add original status for debugging
       eventData.didww_status = data.attributes.status;
+
+      // Calculate and store SMS cost if price and fragments are available
+      const smsCost = SmsCost.fromDidww(data.attributes.price, data.attributes.fragments_sent);
+      if (smsCost) {
+        otpRepo.updateSmsCost(otpRequest.id, smsCost.toStorageUnits());
+        logger.info('SMS cost recorded', {
+          requestId: otpRequest.id,
+          price: data.attributes.price,
+          fragments: data.attributes.fragments_sent,
+          costUsd: smsCost.toUsd(),
+        });
+      }
 
       emitOtpEvent(otpRequest.id, 'sms', eventType, Object.keys(eventData).length > 0 ? eventData : undefined);
 
