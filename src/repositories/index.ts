@@ -25,3 +25,10 @@ export type {
   CreateCallerIdRouteInput,
   UpdateCallerIdRouteInput,
 } from './CallerIdRoutingRepository.js';
+
+export { WhitelistRepository, validateIp, validatePhone, normalizePhone, normalizeIp } from './WhitelistRepository.js';
+export type {
+  WhitelistType,
+  WhitelistEntry,
+  CreateWhitelistInput,
+} from './WhitelistRepository.js';
