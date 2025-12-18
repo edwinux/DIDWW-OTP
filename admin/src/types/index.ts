@@ -7,6 +7,7 @@ export interface OtpRequest {
   status: 'pending' | 'sending' | 'sent' | 'delivered' | 'failed' | 'verified' | 'rejected' | 'expired';
   channel: string | null;
   channel_status: string | null;
+  auth_status: 'verified' | 'wrong_code' | null;
   channels_requested: string | null;
   ip_address: string | null;
   ip_subnet: string | null;

@@ -122,6 +122,15 @@ const configSchema = z.object({
     sessionTtlMinutes: z.coerce.number().int().min(5).max(10080).default(480), // 8 hours default
     port: z.coerce.number().int().min(1).max(65535).default(80),
   }),
+
+  // AMI (Asterisk Manager Interface) configuration for SIP failure detection
+  ami: z.object({
+    enabled: z.coerce.boolean().default(false),
+    host: z.string().default('localhost'),
+    port: z.coerce.number().int().min(1).max(65535).default(5038),
+    username: z.string().default('admin'),
+    secret: z.string().optional(),
+  }),
 });
 
 /**
@@ -204,6 +213,13 @@ function parseEnvVars(): Record<string, unknown> {
       ipWhitelist: process.env.ADMIN_IP_WHITELIST,
       sessionTtlMinutes: process.env.ADMIN_SESSION_TTL,
       port: process.env.ADMIN_PORT,
+    },
+    ami: {
+      enabled: process.env.AMI_ENABLED,
+      host: process.env.AMI_HOST,
+      port: process.env.AMI_PORT,
+      username: process.env.AMI_USERNAME,
+      secret: process.env.AMI_SECRET,
     },
   };
 }

@@ -10,7 +10,7 @@ import { logger } from '../utils/logger.js';
 /**
  * Schema version for migration tracking
  */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 /**
  * SQL schema definitions
@@ -158,6 +158,15 @@ ALTER TABLE otp_requests ADD COLUMN channel_status TEXT;
 `;
 
 /**
+ * V3 Migration: Add auth_status column for verification tracking
+ */
+const V3_MIGRATION_SQL = `
+-- Add auth_status column for authentication verification status
+-- Values: NULL (not verified), 'verified', 'wrong_code'
+ALTER TABLE otp_requests ADD COLUMN auth_status TEXT;
+`;
+
+/**
  * Run database migrations
  */
 export function runMigrations(): void {
@@ -194,6 +203,20 @@ export function runMigrations(): void {
       db.exec(V2_MIGRATION_SQL);
     } catch (err) {
       // Column might already exist if schema was created fresh with V2
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('duplicate column')) {
+        throw err;
+      }
+    }
+  }
+
+  // Run V3 migration if upgrading from V2 or earlier
+  if (currentVersion < 3) {
+    logger.info('Applying V3 migration...', { from: currentVersion, to: 3 });
+    try {
+      db.exec(V3_MIGRATION_SQL);
+    } catch (err) {
+      // Column might already exist if schema was created fresh with V3
       const msg = err instanceof Error ? err.message : String(err);
       if (!msg.includes('duplicate column')) {
         throw err;

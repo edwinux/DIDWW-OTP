@@ -8,6 +8,8 @@ import { getConfig } from './config/index.js';
 import { dbManager, runMigrations, seedAsnBlocklist } from './database/index.js';
 import { ariManager } from './ari/client.js';
 import { registerStasisHandlers } from './ari/handlers.js';
+import { getAmiClient } from './ami/client.js';
+import { registerAmiHandlers } from './ami/handlers.js';
 import { OtpRequestRepository, FraudRulesRepository, WebhookLogRepository } from './repositories/index.js';
 import { SmsChannelProvider, VoiceChannelProvider } from './channels/index.js';
 import { FraudEngine, WebhookService, DispatchService } from './services/index.js';
@@ -111,6 +113,25 @@ async function main(): Promise<void> {
 
     // Register Stasis event handlers
     registerStasisHandlers(client);
+
+    // Connect to AMI for SIP failure detection (optional)
+    if (config.ami.enabled && config.ami.secret) {
+      try {
+        const amiClient = getAmiClient();
+        await amiClient.connect({
+          host: config.ami.host,
+          port: config.ami.port,
+          username: config.ami.username,
+          secret: config.ami.secret,
+        });
+        registerAmiHandlers();
+        logger.info('AMI connected for SIP failure detection');
+      } catch (amiError) {
+        // AMI is optional - log warning but don't fail startup
+        const msg = amiError instanceof Error ? amiError.message : String(amiError);
+        logger.warn('AMI connection failed (SIP failure detection disabled)', { error: msg });
+      }
+    }
 
     // Create and start HTTP server
     const app = createServer(dispatchService);

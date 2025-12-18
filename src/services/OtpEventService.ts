@@ -9,6 +9,7 @@ import { OtpEventRepository, type ChannelEventType } from '../repositories/OtpEv
 import { OtpRequestRepository, type OtpStatus } from '../repositories/OtpRequestRepository.js';
 import { WebhookLogRepository } from '../repositories/WebhookLogRepository.js';
 import { WebhookService } from './WebhookService.js';
+import { getStatusTracker } from './StatusTracker.js';
 import { getWebSocketServer } from '../admin/websocket.js';
 import { logger } from '../utils/logger.js';
 
@@ -69,6 +70,13 @@ export class OtpEventService {
     eventData?: Record<string, unknown>
   ): void {
     try {
+      // Check for duplicate delivery events using StatusTracker
+      const statusTracker = getStatusTracker();
+      if (statusTracker.isDuplicateEvent(requestId, channel, eventType)) {
+        logger.debug('Skipping duplicate event', { requestId, channel, eventType });
+        return;
+      }
+
       // Store event in database
       const event = this.eventRepo.create({
         request_id: requestId,

@@ -14,7 +14,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ChevronLeft, ChevronRight, Search, Phone, MessageSquare, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, Phone, MessageSquare, RefreshCw, ShieldOff } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
 const columns: ColumnDef<OtpRequest>[] = [
   {
@@ -36,7 +37,30 @@ const columns: ColumnDef<OtpRequest>[] = [
   {
     accessorKey: 'status',
     header: 'Status',
-    cell: ({ row }) => <StatusBadge status={row.original.status} />,
+    cell: ({ row }) => (
+      <div className="flex items-center gap-2">
+        <StatusBadge status={row.original.status} />
+        {row.original.shadow_banned === 1 && (
+          <Badge variant="destructive" className="text-xs px-1.5 py-0">
+            <ShieldOff className="h-3 w-3 mr-0.5" />
+            Banned
+          </Badge>
+        )}
+      </div>
+    ),
+  },
+  {
+    accessorKey: 'auth_status',
+    header: 'Auth',
+    cell: ({ row }) => {
+      const authStatus = row.original.auth_status;
+      if (!authStatus) return <span className="text-muted-foreground text-xs">-</span>;
+      return (
+        <Badge variant={authStatus === 'verified' ? 'default' : 'secondary'} className="text-xs">
+          {authStatus === 'verified' ? 'Verified' : 'Wrong Code'}
+        </Badge>
+      );
+    },
   },
   {
     accessorKey: 'channel',

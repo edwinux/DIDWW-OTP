@@ -1,6 +1,6 @@
 {
   "name": "didww-voice-gateway",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Stateless Voice OTP Gateway using Asterisk and DIDWW SIP trunking",
   "type": "module",
   "main": "dist/index.js",

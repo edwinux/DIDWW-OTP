@@ -1,4 +1,4 @@
-import { X, Phone, MessageSquare, Shield, Clock, MapPin, Globe } from 'lucide-react';
+import { X, Phone, MessageSquare, Shield, ShieldOff, Clock, MapPin, Globe, CheckCircle, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -60,12 +60,36 @@ export function LogDetailDrawer({ log, onClose }: LogDetailDrawerProps) {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <p className="text-sm text-muted-foreground">Status</p>
-                  <StatusBadge status={log.status} />
+                  <div className="flex items-center gap-2">
+                    <StatusBadge status={log.status} />
+                    {log.shadow_banned === 1 && (
+                      <Badge variant="destructive" className="text-xs">
+                        <ShieldOff className="h-3 w-3 mr-1" />
+                        Banned
+                      </Badge>
+                    )}
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  <p className="text-sm text-muted-foreground">Fraud Score</p>
-                  <RiskScoreBar score={log.fraud_score} />
+                  <p className="text-sm text-muted-foreground">Auth Status</p>
+                  {log.auth_status ? (
+                    <Badge variant={log.auth_status === 'verified' ? 'default' : 'secondary'} className="gap-1">
+                      {log.auth_status === 'verified' ? (
+                        <><CheckCircle className="h-3 w-3" /> Verified</>
+                      ) : (
+                        <><XCircle className="h-3 w-3" /> Wrong Code</>
+                      )}
+                    </Badge>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">Not verified</span>
+                  )}
                 </div>
+              </div>
+
+              {/* Fraud Score */}
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">Fraud Score</p>
+                <RiskScoreBar score={log.fraud_score} />
               </div>
 
               <Separator />
