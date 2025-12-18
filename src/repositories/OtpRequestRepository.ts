@@ -485,6 +485,94 @@ export class OtpRequestRepository {
   }
 
   /**
+   * Count requests by auth_status with optional date filtering
+   */
+  countByAuthStatus(authStatus: 'verified' | 'wrong_code', dateFrom?: number, dateTo?: number): number {
+    const conditions = ['auth_status = ?', 'shadow_banned = 0'];
+    const params: (string | number)[] = [authStatus];
+
+    if (dateFrom !== undefined) {
+      conditions.push('created_at >= ?');
+      params.push(dateFrom);
+    }
+    if (dateTo !== undefined) {
+      conditions.push('created_at <= ?');
+      params.push(dateTo);
+    }
+
+    const stmt = this.db.prepare(`
+      SELECT COUNT(*) as count FROM otp_requests
+      WHERE ${conditions.join(' AND ')}
+    `);
+    const result = stmt.get(...params) as { count: number };
+    return result.count;
+  }
+
+  /**
+   * Count requests where status='delivered' but auth_status='verified'
+   * Used to avoid double counting in status breakdown
+   */
+  countDeliveredWithAuthVerified(dateFrom?: number, dateTo?: number): number {
+    const conditions = ["status = 'delivered'", "auth_status = 'verified'", 'shadow_banned = 0'];
+    const params: number[] = [];
+
+    if (dateFrom !== undefined) {
+      conditions.push('created_at >= ?');
+      params.push(dateFrom);
+    }
+    if (dateTo !== undefined) {
+      conditions.push('created_at <= ?');
+      params.push(dateTo);
+    }
+
+    const stmt = this.db.prepare(`
+      SELECT COUNT(*) as count FROM otp_requests
+      WHERE ${conditions.join(' AND ')}
+    `);
+    const result = stmt.get(...params) as { count: number };
+    return result.count;
+  }
+
+  /**
+   * Get period stats with comparison to previous period
+   * Returns current count and percentage change vs previous period
+   */
+  getPeriodStats(
+    dateFrom: number,
+    dateTo: number
+  ): {
+    total: { current: number; change: number | null };
+    verified: { current: number; change: number | null };
+    banned: { current: number; change: number | null };
+  } {
+    const periodLength = dateTo - dateFrom;
+    const prevFrom = dateFrom - periodLength;
+    const prevTo = dateFrom;
+
+    // Current period counts
+    const currentTotal = this.countFiltered({ date_from: dateFrom, date_to: dateTo });
+    const currentVerified = this.countByAuthStatus('verified', dateFrom, dateTo);
+    const currentBanned = this.countFiltered({ date_from: dateFrom, date_to: dateTo, shadow_banned: true });
+
+    // Previous period counts
+    const prevTotal = this.countFiltered({ date_from: prevFrom, date_to: prevTo });
+    const prevVerified = this.countByAuthStatus('verified', prevFrom, prevTo);
+    const prevBanned = this.countFiltered({ date_from: prevFrom, date_to: prevTo, shadow_banned: true });
+
+    // Calculate percentage changes
+    const calcChange = (current: number, prev: number): number | null => {
+      if (prev === 0) return current > 0 ? 100 : null;
+      return Math.round(((current - prev) / prev) * 100);
+    };
+
+    return {
+      total: { current: currentTotal, change: calcChange(currentTotal, prevTotal) },
+      verified: { current: currentVerified, change: calcChange(currentVerified, prevVerified) },
+      banned: { current: currentBanned, change: calcChange(currentBanned, prevBanned) },
+    };
+  }
+
+  /**
    * Get hourly traffic data for the last N hours
    */
   getHourlyTraffic(hours: number = 24): { time: string; requests: number; verified: number; failed: number }[] {
@@ -493,11 +581,11 @@ export class OtpRequestRepository {
 
     // Get all requests in the time window
     const stmt = this.db.prepare(`
-      SELECT created_at, status FROM otp_requests
+      SELECT created_at, status, auth_status FROM otp_requests
       WHERE created_at >= ?
       ORDER BY created_at ASC
     `);
-    const rows = stmt.all(cutoff) as { created_at: number; status: string }[];
+    const rows = stmt.all(cutoff) as { created_at: number; status: string; auth_status: string | null }[];
 
     // Group by hour
     const hourlyData = new Map<number, { requests: number; verified: number; failed: number }>();
@@ -515,7 +603,8 @@ export class OtpRequestRepository {
       const hourStats = hourlyData.get(hourKey);
       if (hourStats) {
         hourStats.requests++;
-        if (row.status === 'verified') {
+        // Count as verified if status='verified' OR auth_status='verified'
+        if (row.status === 'verified' || row.auth_status === 'verified') {
           hourStats.verified++;
         } else if (row.status === 'failed' || row.status === 'rejected') {
           hourStats.failed++;
@@ -561,15 +650,16 @@ export class OtpRequestRepository {
           ? 6 * 60 * 60 * 1000
           : 24 * 60 * 60 * 1000;
 
-    // Query requests in time window with shadow_banned status
+    // Query requests in time window with shadow_banned and auth_status
     const stmt = this.db.prepare(`
-      SELECT created_at, status, shadow_banned FROM otp_requests
+      SELECT created_at, status, auth_status, shadow_banned FROM otp_requests
       WHERE created_at >= ? AND created_at <= ?
       ORDER BY created_at ASC
     `);
     const rows = stmt.all(dateFrom, dateTo) as {
       created_at: number;
       status: string;
+      auth_status: string | null;
       shadow_banned: number;
     }[];
 
@@ -590,7 +680,8 @@ export class OtpRequestRepository {
       const bucket = bucketData.get(bucketKey);
       if (bucket) {
         bucket.requests++;
-        if (row.status === 'verified') {
+        // Count as verified if status='verified' OR auth_status='verified'
+        if (row.status === 'verified' || row.auth_status === 'verified') {
           bucket.verified++;
         } else if (row.status === 'failed' || row.status === 'rejected') {
           bucket.failed++;
