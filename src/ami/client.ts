@@ -270,6 +270,9 @@ export class AmiClient extends EventEmitter {
     // Capture DialBegin events for channel tracking
     // DialBegin has DialString with the destination phone (e.g., PJSIP/66620054833@didww)
     if (eventType === 'DialBegin') {
+      // Log ALL fields in DialBegin event for debugging
+      logger.info('AMI: DialBegin raw event', event);
+
       const destChannel = event['DestChannel'] || '';
       const dialString = event['DialString'] || '';
 
