@@ -64,7 +64,6 @@ envsubst < /etc/asterisk/templates/cdr.conf.tmpl > /etc/asterisk/cdr.conf
 envsubst < /etc/asterisk/templates/cel.conf.tmpl > /etc/asterisk/cel.conf
 envsubst < /etc/asterisk/templates/features.conf.tmpl > /etc/asterisk/features.conf
 envsubst < /etc/asterisk/templates/ccss.conf.tmpl > /etc/asterisk/ccss.conf
-envsubst < /etc/asterisk/templates/acl.conf.tmpl > /etc/asterisk/acl.conf
 envsubst < /etc/asterisk/templates/udptl.conf.tmpl > /etc/asterisk/udptl.conf
 envsubst < /etc/asterisk/templates/manager.conf.tmpl > /etc/asterisk/manager.conf
 
