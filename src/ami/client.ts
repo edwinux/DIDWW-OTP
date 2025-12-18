@@ -267,14 +267,36 @@ export class AmiClient extends EventEmitter {
     // Log all AMI events (INFO level to verify subscription is working)
     logger.info('AMI: Event received', { type: eventType, channel: event['Channel'] });
 
-    // Capture Newchannel events for channel tracking
-    // This allows us to associate channel names (PJSIP/didww-xxx) with phone numbers
+    // Capture DialBegin events for channel tracking
+    // DialBegin has DialString with the destination phone (e.g., PJSIP/66620054833@didww)
+    if (eventType === 'DialBegin') {
+      const destChannel = event['DestChannel'] || '';
+      const dialString = event['DialString'] || '';
+
+      // Only process PJSIP/didww channels (our outbound trunk)
+      if (destChannel.startsWith('PJSIP/didww') && dialString) {
+        // Extract phone number from DialString: "PJSIP/66620054833@didww" -> "66620054833"
+        const phoneMatch = dialString.match(/^PJSIP\/(\d+)@/);
+        const phone = phoneMatch ? phoneMatch[1] : '';
+
+        if (phone) {
+          logger.info('AMI: DialBegin for tracking', {
+            destChannel,
+            dialString,
+            phone,
+          });
+          this.emit('dialbegin', { destChannel, phone });
+        }
+      }
+    }
+
+    // Also capture Newchannel events (backup, may have Exten)
     if (eventType === 'Newchannel') {
       const channel = event['Channel'] || '';
       const exten = event['Exten'] || '';
 
-      // Only process PJSIP/didww channels (our outbound trunk)
-      if (channel.startsWith('PJSIP/didww') && exten) {
+      // Only process PJSIP/didww channels with actual phone in Exten
+      if (channel.startsWith('PJSIP/didww') && exten && exten !== 's') {
         const newchannelEvent: AmiNewchannelEvent = {
           channel,
           uniqueid: event['Uniqueid'] || '',

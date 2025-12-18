@@ -183,7 +183,22 @@ export function registerAmiHandlers(): void {
     }
   });
 
-  // Handle Newchannel events to track channel names for later correlation
+  // Handle DialBegin events to track channel names for later correlation
+  // DialBegin has DialString with the actual destination phone number
+  client.on('dialbegin', (event: { destChannel: string; phone: string }) => {
+    try {
+      const tracker = getCallTracker();
+      // Register the AMI channel (PJSIP/didww-xxx) with the phone number from DialString
+      tracker.registerAmiChannel(event.phone, event.destChannel);
+    } catch (error) {
+      logger.error('AMI: Error handling dialbegin event', {
+        error: error instanceof Error ? error.message : String(error),
+        event,
+      });
+    }
+  });
+
+  // Handle Newchannel events as backup (if Exten has actual phone, not "s")
   client.on('newchannel', (event: AmiNewchannelEvent) => {
     try {
       const tracker = getCallTracker();
