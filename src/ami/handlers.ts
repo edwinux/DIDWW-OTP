@@ -16,6 +16,7 @@ import { getCallTracker } from '../services/CallTrackerService.js';
  * These codes indicate why a call was disconnected
  */
 const Q850_CAUSES: Record<number, { description: string; isFailure: boolean }> = {
+  0: { description: 'Call failed (no response from network)', isFailure: true },
   1: { description: 'Unallocated number', isFailure: true },
   2: { description: 'No route to network', isFailure: true },
   3: { description: 'No route to destination', isFailure: true },
@@ -144,7 +145,10 @@ function handleHangup(event: AmiHangupEvent): void {
     });
 
     // Emit voice:failed event with Q.850 details and durations
+    // Include 'error' field for storage in error_message column
+    const errorMessage = `Voice call failed: ${causeInfo.description} (Q.850 cause ${cause})`;
     emitOtpEvent(requestId, 'voice', 'failed', {
+      error: errorMessage,
       q850_cause: cause,
       q850_description: causeInfo.description,
       ami_cause_text: causeText,
