@@ -390,6 +390,100 @@ export class OtpRequestRepository {
   }
 
   /**
+   * Get channel-specific statistics
+   */
+  getChannelStats(channel: 'sms' | 'voice'): {
+    total: number;
+    delivered: number;
+    verified: number;
+    avgDuration: number | null;
+  } {
+    const stmt = this.db.prepare(`
+      SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN status IN ('delivered', 'sent', 'verified') THEN 1 ELSE 0 END) as delivered,
+        SUM(CASE WHEN auth_status = 'verified' THEN 1 ELSE 0 END) as verified,
+        AVG(CASE WHEN answer_time IS NOT NULL AND end_time IS NOT NULL
+            THEN (end_time - answer_time) / 1000.0 ELSE NULL END) as avgDuration
+      FROM otp_requests
+      WHERE channel = ?
+    `);
+    const result = stmt.get(channel) as {
+      total: number;
+      delivered: number;
+      verified: number;
+      avgDuration: number | null;
+    };
+    return result;
+  }
+
+  /**
+   * Get recent verified OTP requests
+   */
+  getRecentVerified(limit: number = 5): OtpRequest[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM otp_requests
+      WHERE auth_status = 'verified'
+      ORDER BY updated_at DESC
+      LIMIT ?
+    `);
+    return stmt.all(limit) as OtpRequest[];
+  }
+
+  /**
+   * Get recent failed OTP requests
+   */
+  getRecentFailed(limit: number = 5): OtpRequest[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM otp_requests
+      WHERE status = 'failed'
+      ORDER BY updated_at DESC
+      LIMIT ?
+    `);
+    return stmt.all(limit) as OtpRequest[];
+  }
+
+  /**
+   * Get recent shadow-banned OTP requests
+   */
+  getRecentBanned(limit: number = 5): OtpRequest[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM otp_requests
+      WHERE shadow_banned = 1
+      ORDER BY created_at DESC
+      LIMIT ?
+    `);
+    return stmt.all(limit) as OtpRequest[];
+  }
+
+  /**
+   * Get 24h trend (percentage change vs previous 24h)
+   */
+  get24hTrend(): number | null {
+    const now = Date.now();
+    const oneDayAgo = now - 24 * 60 * 60 * 1000;
+    const twoDaysAgo = now - 48 * 60 * 60 * 1000;
+
+    const stmt = this.db.prepare(`
+      SELECT
+        SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as last24h,
+        SUM(CASE WHEN created_at >= ? AND created_at < ? THEN 1 ELSE 0 END) as prev24h
+      FROM otp_requests
+      WHERE created_at >= ?
+    `);
+    const result = stmt.get(oneDayAgo, twoDaysAgo, oneDayAgo, twoDaysAgo) as {
+      last24h: number;
+      prev24h: number;
+    };
+
+    if (result.prev24h === 0) {
+      return null; // Can't calculate trend without previous data
+    }
+
+    return Math.round(((result.last24h - result.prev24h) / result.prev24h) * 100);
+  }
+
+  /**
    * Get hourly traffic data for the last N hours
    */
   getHourlyTraffic(hours: number = 24): { time: string; requests: number; verified: number; failed: number }[] {

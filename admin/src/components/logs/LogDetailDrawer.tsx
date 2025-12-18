@@ -176,6 +176,47 @@ export function LogDetailDrawer({ log, onClose }: LogDetailDrawerProps) {
                 </div>
               </div>
 
+              {/* Voice Call Duration (V5) */}
+              {log.channel === 'voice' && (log.start_time || log.answer_time || log.end_time) && (
+                <>
+                  <Separator />
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-medium flex items-center gap-2">
+                      <Phone className="h-4 w-4 text-muted-foreground" />
+                      Call Details
+                    </h3>
+                    <div className="space-y-3 text-sm">
+                      {log.start_time && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Call Started</span>
+                          <span className="font-mono">{formatDate(log.start_time)}</span>
+                        </div>
+                      )}
+                      {log.answer_time && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Answered</span>
+                          <span className="font-mono">{formatDate(log.answer_time)}</span>
+                        </div>
+                      )}
+                      {log.end_time && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Call Ended</span>
+                          <span className="font-mono">{formatDate(log.end_time)}</span>
+                        </div>
+                      )}
+                      {log.answer_time && log.end_time && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Duration</span>
+                          <span className="font-mono font-medium text-primary">
+                            {((log.end_time - log.answer_time) / 1000).toFixed(1)}s
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+
               {/* Error Message */}
               {log.error_message && (
                 <>

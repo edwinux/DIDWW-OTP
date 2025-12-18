@@ -23,6 +23,10 @@ export interface OtpRequest {
   created_at: number;
   updated_at: number;
   expires_at: number | null;
+  // V5: Voice call timing columns
+  start_time: number | null;
+  answer_time: number | null;
+  end_time: number | null;
 }
 
 export interface WebhookLog {
@@ -49,11 +53,34 @@ export interface PaginatedResponse<T> {
   };
 }
 
+export interface VoiceChannelStats {
+  total: number;
+  avgDuration: number | null;      // seconds
+  successRate: number;             // % delivered/answered
+  authSuccessRate: number;         // % verified
+  avgCost: number | null;          // placeholder for future
+}
+
+export interface SmsChannelStats {
+  total: number;
+  deliverySuccessRate: number;     // % delivered
+  authSuccessRate: number;         // % verified
+  avgCost: number | null;          // placeholder for future
+}
+
 export interface LogsStats {
   total: number;
   byStatus: Record<string, number>;
   last24h: number;
+  trend: number | null;            // % change vs previous 24h
   avgFraudScore: number;
+  // Channel-specific stats
+  voice: VoiceChannelStats;
+  sms: SmsChannelStats;
+  // Recent events
+  recentVerified: OtpRequest[];
+  recentFailed: OtpRequest[];
+  recentBanned: OtpRequest[];
 }
 
 export interface TableInfo {
