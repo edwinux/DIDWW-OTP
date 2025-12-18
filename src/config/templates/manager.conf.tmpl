@@ -1,0 +1,19 @@
+; =============================================================================
+; Asterisk Manager Interface (AMI) Configuration
+; Generated from template - DO NOT EDIT DIRECTLY
+; =============================================================================
+; AMI is used by the OTP gateway to detect SIP call failures (Q.850 cause codes)
+; that are not visible through ARI alone.
+
+[general]
+enabled = yes
+port = 5038
+bindaddr = 127.0.0.1
+
+; OTP Gateway AMI user
+[otp-gateway]
+secret = ${AMI_SECRET}
+read = call
+write = originate
+deny = 0.0.0.0/0.0.0.0
+permit = 127.0.0.1/255.255.255.255
