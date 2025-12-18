@@ -27,6 +27,8 @@ export interface OtpRequest {
   start_time: number | null;
   answer_time: number | null;
   end_time: number | null;
+  // V6: SMS cost tracking
+  sms_cost_units: number | null;
 }
 
 export interface WebhookLog {
@@ -65,7 +67,8 @@ export interface SmsChannelStats {
   total: number;
   deliverySuccessRate: number;     // % delivered
   authSuccessRate: number;         // % verified
-  avgCost: number | null;          // placeholder for future
+  avgCost: number | null;          // avg cost per SMS in USD
+  totalCost: number | null;        // total cost for period in USD
 }
 
 export interface PeriodStat {

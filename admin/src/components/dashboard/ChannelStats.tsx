@@ -20,6 +20,11 @@ export function ChannelStats({ channel, stats }: ChannelStatsProps) {
     return `${mins}m ${secs}s`;
   };
 
+  const formatCost = (cost: number | null, decimals: number = 4) => {
+    if (cost === null) return 'N/A';
+    return `$${cost.toFixed(decimals)}`;
+  };
+
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -57,7 +62,7 @@ export function ChannelStats({ channel, stats }: ChannelStatsProps) {
             <p className="text-2xl font-bold">{stats.authSuccessRate}%</p>
           </div>
 
-          {/* Voice: Duration, SMS: placeholder */}
+          {/* Voice: Duration, SMS: Avg Cost */}
           {isVoice ? (
             <div className="space-y-1">
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -72,17 +77,25 @@ export function ChannelStats({ channel, stats }: ChannelStatsProps) {
                 <DollarSign className="h-3.5 w-3.5" />
                 Avg Cost
               </div>
-              <p className="text-2xl font-bold text-muted-foreground">Soon</p>
+              <p className={`text-2xl font-bold ${smsStats.avgCost === null ? 'text-muted-foreground' : ''}`}>
+                {formatCost(smsStats.avgCost, 4)}
+              </p>
             </div>
           )}
 
-          {/* Cost placeholder */}
+          {/* Voice: Avg Cost (placeholder), SMS: Total Cost */}
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <DollarSign className="h-3.5 w-3.5" />
               {isVoice ? 'Avg Cost' : 'Total Cost'}
             </div>
-            <p className="text-2xl font-bold text-muted-foreground">Soon</p>
+            {isVoice ? (
+              <p className="text-2xl font-bold text-muted-foreground">Soon</p>
+            ) : (
+              <p className={`text-2xl font-bold ${smsStats.totalCost === null ? 'text-muted-foreground' : ''}`}>
+                {formatCost(smsStats.totalCost, 2)}
+              </p>
+            )}
           </div>
         </div>
       </CardContent>
