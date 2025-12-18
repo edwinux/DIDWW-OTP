@@ -118,14 +118,15 @@ export class StatusTracker {
 
     const newAuthStatus: AuthStatus = success ? 'verified' : 'wrong_code';
 
-    // Validate auth transition
+    // Validate auth transition - block invalid transitions (e.g., verified -> wrong_code)
     if (!this.stateMachine.canTransitionAuth(request.auth_status, newAuthStatus)) {
-      logger.warn('StatusTracker: Invalid auth transition', {
+      logger.warn('StatusTracker: Invalid auth transition blocked', {
         requestId,
         from: request.auth_status,
         to: newAuthStatus,
       });
-      // Still allow (defensive)
+      // Return current status without updating - verified status is final
+      return request.status as OtpStatus;
     }
 
     // Update auth_status only - do NOT update main status field
