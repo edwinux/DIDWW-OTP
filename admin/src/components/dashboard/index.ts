@@ -4,3 +4,4 @@ export { StatusBreakdown } from './StatusBreakdown';
 export { RecentActivity } from './RecentActivity';
 export { ChannelStats } from './ChannelStats';
 export { EventList } from './EventList';
+export { TimeRangeSelector } from './TimeRangeSelector';

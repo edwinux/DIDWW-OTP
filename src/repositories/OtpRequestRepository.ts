@@ -539,4 +539,138 @@ export class OtpRequestRepository {
 
     return result;
   }
+
+  /**
+   * Get traffic data with adaptive granularity and banned counts
+   *
+   * @param dateFrom - Start timestamp (ms)
+   * @param dateTo - End timestamp (ms)
+   * @param granularity - Bucket size: 'hourly' (1h), '6hourly' (6h), 'daily' (24h)
+   */
+  getTrafficData(
+    dateFrom: number,
+    dateTo: number,
+    granularity: 'hourly' | '6hourly' | 'daily' = 'hourly'
+  ): { time: string; requests: number; verified: number; failed: number; banned: number }[] {
+    // Calculate bucket size in milliseconds
+    const bucketMs =
+      granularity === 'hourly'
+        ? 60 * 60 * 1000
+        : granularity === '6hourly'
+          ? 6 * 60 * 60 * 1000
+          : 24 * 60 * 60 * 1000;
+
+    // Query requests in time window with shadow_banned status
+    const stmt = this.db.prepare(`
+      SELECT created_at, status, shadow_banned FROM otp_requests
+      WHERE created_at >= ? AND created_at <= ?
+      ORDER BY created_at ASC
+    `);
+    const rows = stmt.all(dateFrom, dateTo) as {
+      created_at: number;
+      status: string;
+      shadow_banned: number;
+    }[];
+
+    // Initialize buckets
+    const bucketData = new Map<number, { requests: number; verified: number; failed: number; banned: number }>();
+
+    // Calculate number of buckets and initialize
+    const startBucket = Math.floor(dateFrom / bucketMs);
+    const endBucket = Math.floor(dateTo / bucketMs);
+
+    for (let bucket = startBucket; bucket <= endBucket; bucket++) {
+      bucketData.set(bucket, { requests: 0, verified: 0, failed: 0, banned: 0 });
+    }
+
+    // Count requests per bucket
+    for (const row of rows) {
+      const bucketKey = Math.floor(row.created_at / bucketMs);
+      const bucket = bucketData.get(bucketKey);
+      if (bucket) {
+        bucket.requests++;
+        if (row.status === 'verified') {
+          bucket.verified++;
+        } else if (row.status === 'failed' || row.status === 'rejected') {
+          bucket.failed++;
+        }
+        if (row.shadow_banned === 1) {
+          bucket.banned++;
+        }
+      }
+    }
+
+    // Convert to array with formatted time labels
+    const result: { time: string; requests: number; verified: number; failed: number; banned: number }[] = [];
+    const sortedBuckets = Array.from(bucketData.keys()).sort((a, b) => a - b);
+
+    for (const bucketKey of sortedBuckets) {
+      const stats = bucketData.get(bucketKey)!;
+      const date = new Date(bucketKey * bucketMs);
+
+      // Format time label based on granularity
+      let timeLabel: string;
+      if (granularity === 'daily') {
+        timeLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      } else {
+        timeLabel = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      }
+
+      result.push({
+        time: timeLabel,
+        requests: stats.requests,
+        verified: stats.verified,
+        failed: stats.failed,
+        banned: stats.banned,
+      });
+    }
+
+    return result;
+  }
+
+  /**
+   * Get channel-specific statistics with optional date filtering
+   */
+  getChannelStatsFiltered(
+    channel: 'sms' | 'voice',
+    dateFrom?: number,
+    dateTo?: number
+  ): {
+    total: number;
+    delivered: number;
+    verified: number;
+    avgDuration: number | null;
+  } {
+    const conditions = ['channel = ?'];
+    const params: (string | number)[] = [channel];
+
+    if (dateFrom !== undefined) {
+      conditions.push('created_at >= ?');
+      params.push(dateFrom);
+    }
+    if (dateTo !== undefined) {
+      conditions.push('created_at <= ?');
+      params.push(dateTo);
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    const stmt = this.db.prepare(`
+      SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN status IN ('delivered', 'sent', 'verified') THEN 1 ELSE 0 END) as delivered,
+        SUM(CASE WHEN auth_status = 'verified' THEN 1 ELSE 0 END) as verified,
+        AVG(CASE WHEN answer_time IS NOT NULL AND end_time IS NOT NULL
+            THEN (end_time - answer_time) / 1000.0 ELSE NULL END) as avgDuration
+      FROM otp_requests
+      WHERE ${whereClause}
+    `);
+    const result = stmt.get(...params) as {
+      total: number;
+      delivered: number;
+      verified: number;
+      avgDuration: number | null;
+    };
+    return result;
+  }
 }

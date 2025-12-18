@@ -199,12 +199,39 @@ export class LogsController {
 
   /**
    * GET /admin/logs/hourly-traffic
-   * Get hourly traffic data for the last 24 hours
+   * Get traffic data with optional time range and granularity
    */
-  async getHourlyTraffic(_req: Request, res: Response): Promise<void> {
+  async getHourlyTraffic(req: Request, res: Response): Promise<void> {
     try {
-      const data = this.otpRepo.getHourlyTraffic(24);
-      res.json({ data });
+      const trafficQuerySchema = z.object({
+        date_from: z.coerce.number().int().optional(),
+        date_to: z.coerce.number().int().optional(),
+        granularity: z.enum(['hourly', '6hourly', 'daily']).optional(),
+      });
+
+      const validation = trafficQuerySchema.safeParse(req.query);
+      if (!validation.success) {
+        res.status(400).json({
+          error: 'validation_error',
+          message: validation.error.issues.map((i) => `${i.path}: ${i.message}`).join(', '),
+        });
+        return;
+      }
+
+      const { date_from, date_to, granularity } = validation.data;
+
+      // Use new getTrafficData if date params provided, otherwise fall back to legacy method
+      if (date_from !== undefined || date_to !== undefined) {
+        const now = Date.now();
+        const from = date_from ?? now - 24 * 60 * 60 * 1000;
+        const to = date_to ?? now;
+        const data = this.otpRepo.getTrafficData(from, to, granularity ?? 'hourly');
+        res.json({ data });
+      } else {
+        // Legacy: return 24h hourly data (backwards compatible)
+        const data = this.otpRepo.getHourlyTraffic(24);
+        res.json({ data });
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error('Failed to fetch hourly traffic', { error: errorMessage });
@@ -218,33 +245,55 @@ export class LogsController {
   /**
    * GET /admin/logs/stats
    * Get summary statistics with channel-specific breakdowns
+   * Accepts optional date_from/date_to query params for time filtering
    */
-  async getStats(_req: Request, res: Response): Promise<void> {
+  async getStats(req: Request, res: Response): Promise<void> {
     try {
+      const statsQuerySchema = z.object({
+        date_from: z.coerce.number().int().optional(),
+        date_to: z.coerce.number().int().optional(),
+      });
+
+      const validation = statsQuerySchema.safeParse(req.query);
+      if (!validation.success) {
+        res.status(400).json({
+          error: 'validation_error',
+          message: validation.error.issues.map((i) => `${i.path}: ${i.message}`).join(', '),
+        });
+        return;
+      }
+
+      const { date_from, date_to } = validation.data;
       const now = Date.now();
-      const oneDayAgo = now - 24 * 60 * 60 * 1000;
 
-      // Get total count
-      const total = this.otpRepo.countFiltered({});
+      // Build filter object for time range
+      const timeFilter: { date_from?: number; date_to?: number } = {};
+      if (date_from !== undefined) timeFilter.date_from = date_from;
+      if (date_to !== undefined) timeFilter.date_to = date_to;
 
-      // Get last 24h count
-      const last24h = this.otpRepo.countFiltered({ date_from: oneDayAgo });
+      // Get total count (within time range if specified)
+      const total = this.otpRepo.countFiltered(timeFilter);
 
-      // Get 24h trend
+      // Get period count - if custom range, this equals total; otherwise show last24h
+      const periodCount = date_from !== undefined
+        ? total
+        : this.otpRepo.countFiltered({ date_from: now - 24 * 60 * 60 * 1000 });
+
+      // Get 24h trend (always based on last 24h comparison)
       const trend = this.otpRepo.get24hTrend();
 
-      // Get status breakdown
+      // Get status breakdown (with time filter)
       const statuses = this.otpRepo.getDistinctValues('status');
       const byStatus: Record<string, number> = {};
       for (const status of statuses) {
-        byStatus[status] = this.otpRepo.countFiltered({ status });
+        byStatus[status] = this.otpRepo.countFiltered({ ...timeFilter, status });
       }
 
-      // Get average fraud score (if available)
+      // Get average fraud score (with time filter)
       let avgFraudScore: number | null = null;
       try {
-        const allRequests = this.otpRepo.findAllPaginated({}, 1000, 0, 'created_at', 'desc');
-        const scoresWithValues = allRequests.filter(r => r.fraud_score !== null && r.fraud_score !== undefined);
+        const requests = this.otpRepo.findAllPaginated(timeFilter, 1000, 0, 'created_at', 'desc');
+        const scoresWithValues = requests.filter(r => r.fraud_score !== null && r.fraud_score !== undefined);
         if (scoresWithValues.length > 0) {
           const sum = scoresWithValues.reduce((acc, r) => acc + (r.fraud_score || 0), 0);
           avgFraudScore = sum / scoresWithValues.length;
@@ -253,8 +302,8 @@ export class LogsController {
         // Ignore if fraud_score column doesn't exist
       }
 
-      // Get voice channel stats
-      const voiceRaw = this.otpRepo.getChannelStats('voice');
+      // Get voice channel stats (with time filter)
+      const voiceRaw = this.otpRepo.getChannelStatsFiltered('voice', date_from, date_to);
       const voice = {
         total: voiceRaw.total,
         avgDuration: voiceRaw.avgDuration ? Math.round(voiceRaw.avgDuration * 10) / 10 : null,
@@ -263,8 +312,8 @@ export class LogsController {
         avgCost: null, // Placeholder for future
       };
 
-      // Get SMS channel stats
-      const smsRaw = this.otpRepo.getChannelStats('sms');
+      // Get SMS channel stats (with time filter)
+      const smsRaw = this.otpRepo.getChannelStatsFiltered('sms', date_from, date_to);
       const sms = {
         total: smsRaw.total,
         deliverySuccessRate: smsRaw.total > 0 ? Math.round((smsRaw.delivered / smsRaw.total) * 100) : 0,
@@ -272,14 +321,14 @@ export class LogsController {
         avgCost: null, // Placeholder for future
       };
 
-      // Get recent events
+      // Get recent events - ALWAYS last 5, NOT filtered by time range
       const recentVerified = this.otpRepo.getRecentVerified(5);
       const recentFailed = this.otpRepo.getRecentFailed(5);
       const recentBanned = this.otpRepo.getRecentBanned(5);
 
       res.json({
         total,
-        last24h,
+        periodCount,
         trend,
         byStatus,
         avgFraudScore,
