@@ -4,6 +4,8 @@
 
 # Stage 1: Build backend TypeScript
 FROM node:20-alpine AS builder
+# Install build dependencies for native modules (better-sqlite3)
+RUN apk add --no-cache python3 make g++
 WORKDIR /app
 COPY package*.json tsconfig.json ./
 RUN npm ci
