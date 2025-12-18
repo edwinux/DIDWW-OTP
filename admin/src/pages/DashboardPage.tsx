@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '@/services/api';
 import type { LogsStats } from '@/types';
-import { StatCard, TrafficChart, StatusBreakdown, RecentActivity } from '@/components/dashboard';
+import { StatCard, TrafficChart, StatusBreakdown, ChannelStats, EventList } from '@/components/dashboard';
 import { Activity, CheckCircle, ShieldAlert, Clock } from 'lucide-react';
 
 interface TrafficDataPoint {
@@ -9,52 +9,6 @@ interface TrafficDataPoint {
   requests: number;
   verified: number;
   failed: number;
-}
-
-// Generate mock recent activity
-function generateRecentActivity(stats: LogsStats | null) {
-  const activities = [];
-  const now = Date.now();
-
-  if (stats && stats.total > 0) {
-    activities.push({
-      id: '1',
-      type: 'sms' as const,
-      message: `${stats.last24h} OTP requests in last 24 hours`,
-      timestamp: now - 1000 * 60 * 5,
-      status: 'success' as const,
-    });
-  }
-
-  if (stats?.byStatus?.failed && stats.byStatus.failed > 0) {
-    activities.push({
-      id: '2',
-      type: 'alert' as const,
-      message: `${stats.byStatus.failed} failed requests detected`,
-      timestamp: now - 1000 * 60 * 15,
-      status: 'warning' as const,
-    });
-  }
-
-  if (stats?.avgFraudScore && stats.avgFraudScore > 30) {
-    activities.push({
-      id: '3',
-      type: 'fraud_blocked' as const,
-      message: `High average fraud score: ${stats.avgFraudScore.toFixed(1)}`,
-      timestamp: now - 1000 * 60 * 30,
-      status: 'error' as const,
-    });
-  }
-
-  activities.push({
-    id: '4',
-    type: 'voice' as const,
-    message: 'Gateway health check passed',
-    timestamp: now - 1000 * 60 * 60,
-    status: 'success' as const,
-  });
-
-  return activities;
 }
 
 export default function DashboardPage() {
@@ -112,6 +66,11 @@ export default function DashboardPage() {
     ? Object.values(stats.byStatus).slice(0, 7)
     : [10, 25, 15, 30, 20, 35, 25];
 
+  // Build trend prop - only show if we have data
+  const trendProp = stats?.trend !== null && stats?.trend !== undefined
+    ? { value: stats.trend, label: 'vs yesterday' }
+    : undefined;
+
   return (
     <div className="space-y-6">
       {/* KPI Cards */}
@@ -127,7 +86,7 @@ export default function DashboardPage() {
           title="Last 24 Hours"
           value={stats?.last24h ?? 0}
           icon={<Clock className="h-5 w-5" />}
-          trend={{ value: 12, label: 'vs yesterday' }}
+          trend={trendProp}
           variant="default"
         />
         <StatCard
@@ -150,6 +109,18 @@ export default function DashboardPage() {
         />
       </div>
 
+      {/* Channel Stats Row */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <ChannelStats
+          channel="voice"
+          stats={stats?.voice ?? { total: 0, avgDuration: null, successRate: 0, authSuccessRate: 0, avgCost: null }}
+        />
+        <ChannelStats
+          channel="sms"
+          stats={stats?.sms ?? { total: 0, deliverySuccessRate: 0, authSuccessRate: 0, avgCost: null }}
+        />
+      </div>
+
       {/* Charts Row */}
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
@@ -158,9 +129,26 @@ export default function DashboardPage() {
         <StatusBreakdown data={stats?.byStatus ?? {}} />
       </div>
 
-      {/* Activity Row */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <RecentActivity activities={generateRecentActivity(stats)} />
+      {/* Events Row */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <EventList
+          title="Verified"
+          events={stats?.recentVerified ?? []}
+          variant="verified"
+          emptyMessage="No verified OTPs yet"
+        />
+        <EventList
+          title="Failed"
+          events={stats?.recentFailed ?? []}
+          variant="failed"
+          emptyMessage="No failed requests"
+        />
+        <EventList
+          title="Banned"
+          events={stats?.recentBanned ?? []}
+          variant="banned"
+          emptyMessage="No banned requests"
+        />
       </div>
     </div>
   );
