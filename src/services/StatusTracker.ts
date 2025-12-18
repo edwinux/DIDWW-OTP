@@ -128,23 +128,18 @@ export class StatusTracker {
       // Still allow (defensive)
     }
 
-    // Update auth_status
+    // Update auth_status only - do NOT update main status field
+    // The status field should remain as the delivery status (delivered, sent, etc.)
     this.otpRepo.updateAuthStatus(requestId, newAuthStatus);
-
-    // Update combined status for backward compatibility
-    const combinedStatus = this.stateMachine.getCombinedStatus(
-      request.status as OtpStatus,
-      newAuthStatus
-    );
-    this.otpRepo.updateStatus(requestId, combinedStatus);
 
     logger.debug('StatusTracker: Auth status updated', {
       requestId,
       authStatus: newAuthStatus,
-      combinedStatus,
+      deliveryStatus: request.status,
     });
 
-    return combinedStatus;
+    // Return the delivery status (unchanged)
+    return request.status as OtpStatus;
   }
 
   /**
