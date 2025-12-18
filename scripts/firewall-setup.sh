@@ -159,6 +159,15 @@ else
     ufw allow 80/tcp comment "Admin-Open"
 fi
 
+# HTTPS (TCP 443) - for nginx reverse proxy with SSL
+if [ -n "$ALLOWED_CLIENT_IPS" ]; then
+    log_info "Configuring HTTPS (TCP 443) - Clients only (restricted)..."
+    add_rules_for_ips "443" "tcp" "$ALLOWED_CLIENT_IPS" "HTTPS-Client"
+else
+    log_info "Configuring HTTPS (TCP 443) - Open..."
+    ufw allow 443/tcp comment "HTTPS-Open"
+fi
+
 # Enable UFW
 log_info "Enabling UFW..."
 ufw --force enable
@@ -175,9 +184,11 @@ log_info "RTP (10000-10020/UDP): DIDWW only"
 if [ -n "$ALLOWED_CLIENT_IPS" ]; then
     log_info "HTTP API (8080/TCP): DIDWW + configured clients (restricted)"
     log_info "Admin (80/TCP): Configured clients only (restricted)"
+    log_info "HTTPS (443/TCP): Configured clients only (restricted)"
 else
     log_info "HTTP API (8080/TCP): Open (protected by API_SECRET)"
     log_info "Admin (80/TCP): Open (protected by admin credentials)"
+    log_info "HTTPS (443/TCP): Open"
 fi
 log_info "SSH (22/TCP): Open"
 log_info ""
