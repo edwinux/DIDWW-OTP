@@ -2,18 +2,19 @@
  * Voice Channel Provider
  *
  * Wraps existing ARI logic for voice OTP delivery.
+ * Uses CallerIdRouter for prefix-based caller ID selection.
  */
 
 import type { IChannelProvider, ChannelDeliveryResult, ChannelType } from './IChannelProvider.js';
 import { isAriConnected, getAriClient } from '../ari/client.js';
 import { originateOtpCall } from '../ari/handlers.js';
+import { getCallerIdRouter } from '../services/CallerIdRouter.js';
 import { logger } from '../utils/logger.js';
 
 /**
- * Voice configuration
+ * Voice configuration (kept for interface compatibility)
  */
 export interface VoiceConfig {
-  callerId: string;
   messageTemplate: string;
   speed: 'slow' | 'medium' | 'fast';
   timeout: number;
@@ -24,10 +25,11 @@ export interface VoiceConfig {
  */
 export class VoiceChannelProvider implements IChannelProvider {
   readonly channelType: ChannelType = 'voice';
-  private config: VoiceConfig;
 
-  constructor(config: VoiceConfig) {
-    this.config = config;
+  // Voice config (messageTemplate, speed) is read directly from global config in handlers.ts
+  // Caller ID is now obtained from CallerIdRouter
+  constructor(_config: VoiceConfig) {
+    // Config stored for potential future use
   }
 
   /**
@@ -40,6 +42,24 @@ export class VoiceChannelProvider implements IChannelProvider {
       requestId,
       phone: phone.slice(0, 5) + '***',
     });
+
+    // Get caller ID from router (prefix-based routing)
+    const router = getCallerIdRouter();
+    const callerId = router.getCallerId('voice', e164Phone);
+
+    if (!callerId) {
+      logger.error('No caller ID route configured for voice destination', {
+        requestId,
+        phone: phone.slice(0, 5) + '***',
+      });
+
+      return {
+        success: false,
+        channelType: 'voice',
+        error: 'No caller ID route configured for this destination',
+        errorCode: 'NO_CALLER_ID_ROUTE',
+      };
+    }
 
     // Check ARI connection
     if (!isAriConnected()) {
@@ -54,11 +74,12 @@ export class VoiceChannelProvider implements IChannelProvider {
 
     try {
       const client = getAriClient();
-      await originateOtpCall(client, e164Phone, code, requestId);
+      await originateOtpCall(client, e164Phone, code, requestId, callerId);
 
       logger.info('Voice call initiated', {
         requestId,
         phone: phone.slice(0, 5) + '***',
+        callerId,
       });
 
       return {
@@ -66,7 +87,7 @@ export class VoiceChannelProvider implements IChannelProvider {
         channelType: 'voice',
         providerId: requestId,
         metadata: {
-          callerId: this.config.callerId,
+          callerId,
         },
       };
     } catch (error) {

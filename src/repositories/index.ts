@@ -17,3 +17,11 @@ export type {
 
 export { WebhookLogRepository } from './WebhookLogRepository.js';
 export type { WebhookLog } from './WebhookLogRepository.js';
+
+export { CallerIdRoutingRepository, normalizePrefix, validateVoiceCallerId } from './CallerIdRoutingRepository.js';
+export type {
+  CallerIdRoute,
+  RoutingChannel,
+  CreateCallerIdRouteInput,
+  UpdateCallerIdRouteInput,
+} from './CallerIdRoutingRepository.js';

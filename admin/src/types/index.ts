@@ -94,3 +94,29 @@ export interface TestOtpResponse {
   };
   error?: string;
 }
+
+export interface CallerIdRoute {
+  id: number;
+  channel: 'sms' | 'voice';
+  prefix: string;
+  caller_id: string;
+  description: string | null;
+  enabled: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface CallerIdRoutesResponse {
+  data: CallerIdRoute[];
+  meta: {
+    total: number;
+    sms: number;
+    voice: number;
+  };
+}
+
+export interface CallerIdTestResult {
+  phone: string;
+  sms: { prefix: string; callerId: string } | null;
+  voice: { prefix: string; callerId: string } | null;
+}

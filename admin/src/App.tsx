@@ -6,6 +6,7 @@ import DashboardPage from './pages/DashboardPage';
 import LogsPage from './pages/LogsPage';
 import DatabasePage from './pages/DatabasePage';
 import TesterPage from './pages/TesterPage';
+import SettingsPage from './pages/SettingsPage';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="logs" element={<LogsPage />} />
         <Route path="database" element={<DatabasePage />} />
         <Route path="tester" element={<TesterPage />} />
+        <Route path="settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>

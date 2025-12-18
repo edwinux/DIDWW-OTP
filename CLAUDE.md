@@ -85,10 +85,15 @@ The gateway processes OTP requests through fraud detection, routes to appropriat
 
 ### Admin Panel (src/admin/)
 - `index.ts` - Admin HTTP server with session management
+- `routes.ts:126-131` - GET /admin/version endpoint providing build metadata
 - `controllers/LogsController.ts` - OTP request logs and statistics
 - `controllers/TesterController.ts` - Live OTP testing interface
 - `controllers/DatabaseController.ts` - Direct database browser
 - `websocket.ts` - Real-time WebSocket event broadcasting
+
+### Admin Frontend (admin/src/)
+- `components/layout/Sidebar.tsx:38-43` - Version fetching from /admin/version
+- `components/layout/Sidebar.tsx:145-167` - Version display in sidebar footer with commit SHA and build time
 
 ## Integration Points
 
@@ -103,6 +108,7 @@ The gateway processes OTP requests through fraud detection, routes to appropriat
 - `POST /webhooks/dlr` - Receive SMS delivery reports from DIDWW
 - `POST /webhooks/auth` - Receive authentication success/failure feedback
 - `GET /health` - Service health check
+- `GET /admin/version` - Build version metadata (public, no auth)
 - `/admin/*` - Admin panel API (authenticated)
 
 ### WebSocket Events
@@ -176,19 +182,66 @@ SMS uses REST API credentials (SMS_USERNAME/SMS_PASSWORD) while Voice uses SIP t
 ### DIDWW DLR Callback Handling
 SMS delivery reports arrive via POST /webhooks/dlr in JSON:API format. Controller maps DIDWW-specific status codes to normalized events, translates error codes to descriptions (admin logs only), and emits events via OtpEventService. See WebhookController.ts:125-228.
 
+### Build Version Tracking
+Docker images are tagged with git commit SHA and build timestamp during CI/CD build. Version metadata is injected as BUILD_COMMIT and BUILD_TIME environment variables, exposed via GET /admin/version endpoint, and displayed in admin panel sidebar. Shows short SHA in UI with full SHA and build time on tooltip hover. Helps track deployed versions in production. See Dockerfile:29-33, routes.ts:126-131, and Sidebar.tsx:145-167.
+
+### Automated Deployment with Rollback
+GitHub Actions builds Docker image on every push to main, tags with commit SHA, pushes to GHCR, then SSHs to production server to run deployment script. Script pulls new image, stops old container, starts new one, performs health checks with retries, and automatically rolls back to previous image if health checks fail. Ensures zero-downtime deployments with safety net. See .github/workflows/deploy.yml and scripts/deploy.sh.
+
 ## Testing
 - `test-otp.sh` - Shell script for testing OTP dispatch
 - Admin panel OTP Tester - Live testing with debug console
 - Reference: README.md API Reference section
 
 ## Build & Deployment
+
+### Local Development
 - Build: `npm run build` (outputs to dist/)
-- Docker: `docker compose up` or standalone container
 - Admin build: `cd admin && npm run build` (outputs to admin/dist/)
+- Docker: `docker compose up` or standalone container
 - See Dockerfile and docker-compose.yml for containerization
 
+### CI/CD Pipeline
+- `.github/workflows/deploy.yml:1-97` - GitHub Actions workflow
+  - Lines 12-62: Build job - Creates multi-arch Docker image, pushes to GHCR
+  - Lines 64-96: Deploy job - Copies deploy script and triggers deployment
+  - Uses build args BUILD_COMMIT and BUILD_TIME for version tracking
+
+- `scripts/deploy.sh:1-143` - Production deployment script
+  - Lines 28-50: Health check with configurable retries
+  - Lines 52-78: Automatic rollback on health check failure
+  - Lines 81-142: Main deployment flow with health verification
+  - Runs on production server via SSH from GitHub Actions
+
+### Docker Build Process
+- `Dockerfile:29-33` - Build arguments for version metadata
+  - BUILD_COMMIT injected from git SHA
+  - BUILD_TIME from commit timestamp
+  - Exposed as environment variables in container
+
+- `docker-compose.yml:3` - Image configuration
+  - Uses DEPLOY_IMAGE environment variable for production
+  - Defaults to ghcr.io/edwinux/didww-otp:latest
+  - Deploy script overrides this with versioned image
+
+### Production Environment
+- URL: https://otp-gw.pro.makeup
+- SSL/HTTPS: nginx reverse proxy with Cloudflare Origin Certificate
+- Deployment: Automatic on push to main branch
+- Registry: GitHub Container Registry (ghcr.io)
+
+See docs/DEPLOYMENT.md for detailed deployment instructions.
+
 ## Recent Changes
-Completed Intelligent OTP Gateway implementation with:
+CI/CD and Production Deployment:
+- GitHub Actions workflow for automated Docker builds and deployments
+- Production deployment script with automatic rollback on health check failures
+- Version tracking via build metadata (commit SHA and build time)
+- Admin panel version display in sidebar footer
+- SSL/HTTPS via nginx with Cloudflare Origin Certificate
+- Production deployment at https://otp-gw.pro.makeup
+
+Previous Features:
 - Multi-channel delivery (SMS/Voice) with automatic failover
 - Fraud detection with shadow-ban capabilities
 - Granular event system with WebSocket and HTTP webhook support
