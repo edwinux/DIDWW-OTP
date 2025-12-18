@@ -6,7 +6,7 @@
  * Uses CallTrackerService for call correlation.
  */
 
-import { getAmiClient, type AmiHangupEvent } from './client.js';
+import { getAmiClient, type AmiHangupEvent, type AmiNewchannelEvent } from './client.js';
 import { emitOtpEvent } from '../services/OtpEventService.js';
 import { logger } from '../utils/logger.js';
 import { getCallTracker } from '../services/CallTrackerService.js';
@@ -90,10 +90,18 @@ function handleHangup(event: AmiHangupEvent): void {
   const causeInfo = getCauseInfo(cause);
 
   // Find the associated request - try multiple correlation methods
-  let requestId = findRequestIdFromChannel(channel);
+  // 1. Try AMI channel name (registered from Newchannel event)
+  let requestId = tracker.findRequestByAmiChannel(channel);
+  if (requestId) {
+    logger.debug('AMI: Correlated hangup via AMI channel', { channel, requestId });
+  }
 
-  // Fallback: use ConnectedLineNum (destination phone) for correlation
-  // This handles cases where channel is PJSIP/didww-00000000 instead of PJSIP/{phone}-xxx
+  // 2. Try original channel pattern matching
+  if (!requestId) {
+    requestId = findRequestIdFromChannel(channel);
+  }
+
+  // 3. Fallback: use ConnectedLineNum (destination phone) for correlation
   if (!requestId && connectedLineNum) {
     requestId = tracker.findRequestByPhone(connectedLineNum);
     if (requestId) {
@@ -169,6 +177,20 @@ export function registerAmiHandlers(): void {
       handleHangup(event);
     } catch (error) {
       logger.error('AMI: Error handling hangup event', {
+        error: error instanceof Error ? error.message : String(error),
+        event,
+      });
+    }
+  });
+
+  // Handle Newchannel events to track channel names for later correlation
+  client.on('newchannel', (event: AmiNewchannelEvent) => {
+    try {
+      const tracker = getCallTracker();
+      // Register the AMI channel (PJSIP/didww-xxx) with the phone number (Exten)
+      tracker.registerAmiChannel(event.exten, event.channel);
+    } catch (error) {
+      logger.error('AMI: Error handling newchannel event', {
         error: error instanceof Error ? error.message : String(error),
         event,
       });
