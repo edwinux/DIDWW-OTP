@@ -56,6 +56,8 @@ class CallTrackerService {
   // Secondary lookups for AMI correlation
   private channelToRequest = new Map<string, string>();
   private uniqueIdToRequest = new Map<string, string>();
+  // Actual AMI channel names (PJSIP/didww-xxx) to request mapping
+  private amiChannelToRequest = new Map<string, string>();
 
   /**
    * Register a new call when origination starts
@@ -173,6 +175,37 @@ class CallTrackerService {
     }
 
     return undefined;
+  }
+
+  /**
+   * Register AMI channel name when we see a Newchannel event
+   * This associates the actual channel (PJSIP/didww-00000000) with our request
+   */
+  registerAmiChannel(phone: string, amiChannel: string): string | undefined {
+    // Find request by phone number
+    const requestId = this.findRequestByPhone(phone);
+    if (!requestId) {
+      logger.debug('CallTracker: No active call for phone', { phone, amiChannel });
+      return undefined;
+    }
+
+    // Store the AMI channel mapping
+    this.amiChannelToRequest.set(amiChannel, requestId);
+
+    logger.info('CallTracker: Registered AMI channel', {
+      requestId,
+      amiChannel,
+      phone: phone.slice(0, 5) + '***',
+    });
+
+    return requestId;
+  }
+
+  /**
+   * Find request ID by AMI channel name (PJSIP/didww-xxx)
+   */
+  findRequestByAmiChannel(amiChannel: string): string | undefined {
+    return this.amiChannelToRequest.get(amiChannel);
   }
 
   /**
@@ -310,6 +343,14 @@ class CallTrackerService {
     // Clean up unique ID if set
     if (state.uniqueId) {
       this.uniqueIdToRequest.delete(state.uniqueId);
+    }
+
+    // Clean up AMI channel mapping
+    for (const [channel, reqId] of this.amiChannelToRequest.entries()) {
+      if (reqId === requestId) {
+        this.amiChannelToRequest.delete(channel);
+        break;
+      }
     }
   }
 }
