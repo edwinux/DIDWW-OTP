@@ -2,6 +2,7 @@
  * ARI Event Handlers
  *
  * Stasis application handlers for OTP call flow.
+ * Uses CallTrackerService for centralized call state management.
  */
 
 import type { Client as AriClient, Channel } from 'ari-client';
@@ -9,35 +10,34 @@ import { getConfig } from '../config/index.js';
 import { logger } from '../utils/logger.js';
 import { generateOtpTts } from '../utils/tts.js';
 import { emitOtpEvent } from '../services/OtpEventService.js';
-
-/**
- * Call state tracking
- */
-interface CallState {
-  phone: string;
-  code: string;
-  otpPlayed: boolean;       // Whether OTP audio finished playing
-  systemHangup: boolean;    // Whether system initiated hangup (vs user)
-}
-
-const activeCalls = new Map<string, CallState>();
+import { getCallTracker, type CallState } from '../services/CallTrackerService.js';
 
 /**
  * Register Stasis event handlers on the ARI client
  */
 export function registerStasisHandlers(client: AriClient): void {
+  const tracker = getCallTracker();
+
   client.on('StasisStart', async (event, channel) => {
     const callId = event.args?.[0] || channel.id;
-    const callState = activeCalls.get(callId);
+    const callState = tracker.getCallState(callId);
 
     if (!callState) {
       logger.warn('StasisStart for unknown call', { callId });
       return;
     }
 
-    // Emit answered event
-    emitOtpEvent(callId, 'voice', 'answered');
-    logger.info('Call answered', { callId });
+    // Update channel ID for correlation
+    tracker.setChannelId(callId, channel.id);
+
+    // Mark answered and get ring duration
+    const durations = tracker.markAnswered(callId);
+
+    // Emit answered event with ring duration
+    emitOtpEvent(callId, 'voice', 'answered', {
+      ring_duration_ms: durations.ringDurationMs,
+    });
+    logger.info('Call answered', { callId, ringDurationMs: durations.ringDurationMs });
 
     try {
       await handleOtpCall(client, channel, callState, callId);
@@ -46,34 +46,48 @@ export function registerStasisHandlers(client: AriClient): void {
 
       // Check if this is a "Channel not found" error (user hung up)
       if (msg.includes('Channel not found') || msg.includes('not found')) {
-        // User hung up - emit hangup event with context
+        // User hung up - end call and emit hangup event
+        const result = tracker.endCall(callId);
         emitOtpEvent(callId, 'voice', 'hangup', {
           hung_up_by: 'user',
-          otp_played: callState.otpPlayed,
+          otp_played: result?.state.otpPlayed ?? false,
+          ring_duration_ms: result?.durations.ringDurationMs,
+          talk_duration_ms: result?.durations.talkDurationMs,
         });
-        logger.info('User hung up', { callId, otpPlayed: callState.otpPlayed });
+        logger.info('User hung up', {
+          callId,
+          otpPlayed: result?.state.otpPlayed,
+          talkDurationMs: result?.durations.talkDurationMs,
+        });
       } else {
-        // Actual error
+        // Actual error - end call and emit failed event
+        tracker.endCall(callId);
         logger.error('Error in OTP call flow', { callId, error: msg });
         emitOtpEvent(callId, 'voice', 'failed', { error: msg });
       }
-    } finally {
-      activeCalls.delete(callId);
     }
   });
 
   client.on('StasisEnd', (_event, channel) => {
     const callId = channel.id;
-    const callState = activeCalls.get(callId);
+    const callState = tracker.getCallState(callId);
 
     if (callState && !callState.systemHangup) {
-      // User hung up before system did
-      emitOtpEvent(callId, 'voice', 'hangup', {
-        hung_up_by: 'user',
-        otp_played: callState.otpPlayed,
-      });
-      logger.info('User hung up (StasisEnd)', { callId, otpPlayed: callState.otpPlayed });
-      activeCalls.delete(callId);
+      // User hung up before system did - end call and get durations
+      const result = tracker.endCall(callId);
+      if (result) {
+        emitOtpEvent(callId, 'voice', 'hangup', {
+          hung_up_by: 'user',
+          otp_played: result.state.otpPlayed,
+          ring_duration_ms: result.durations.ringDurationMs,
+          talk_duration_ms: result.durations.talkDurationMs,
+        });
+        logger.info('User hung up (StasisEnd)', {
+          callId,
+          otpPlayed: result.state.otpPlayed,
+          talkDurationMs: result.durations.talkDurationMs,
+        });
+      }
     }
 
     logger.debug('Call ended', { callId });
@@ -88,6 +102,7 @@ export function registerStasisHandlers(client: AriClient): void {
 async function handleOtpCall(client: AriClient, channel: Channel, callState: CallState, callId: string): Promise<void> {
   const config = getConfig();
   const { messageTemplate, speed } = config.voice;
+  const tracker = getCallTracker();
 
   // Answer the call
   await channel.answer();
@@ -105,7 +120,7 @@ async function handleOtpCall(client: AriClient, channel: Channel, callState: Cal
     await playSound(client, channel, `sound:${soundRef}`);
 
     // Mark OTP as played successfully
-    callState.otpPlayed = true;
+    tracker.markOtpPlayed(callId);
 
     // Brief pause before hangup
     await sleep(500);
@@ -121,19 +136,30 @@ async function handleOtpCall(client: AriClient, channel: Channel, callState: Cal
 
     // Fallback: just speak digits if TTS fails
     await speakDigits(client, channel, callState.code, config.voice.digitPauseMs);
-    callState.otpPlayed = true;
+    tracker.markOtpPlayed(callId);
     await sleep(500);
   }
 
   // Mark that system is initiating hangup
-  callState.systemHangup = true;
+  tracker.markSystemHangup(callId);
 
   // Hangup
   await channel.hangup();
 
-  // Emit completed event (system hung up after OTP played)
-  emitOtpEvent(callId, 'voice', 'completed', { hung_up_by: 'system' });
-  logger.info('Voice OTP completed', { callId });
+  // End call and get final durations
+  const result = tracker.endCall(callId);
+
+  // Emit completed event with durations
+  emitOtpEvent(callId, 'voice', 'completed', {
+    hung_up_by: 'system',
+    ring_duration_ms: result?.durations.ringDurationMs,
+    talk_duration_ms: result?.durations.talkDurationMs,
+  });
+  logger.info('Voice OTP completed', {
+    callId,
+    ringDurationMs: result?.durations.ringDurationMs,
+    talkDurationMs: result?.durations.talkDurationMs,
+  });
 }
 
 /**
@@ -194,19 +220,21 @@ export async function originateOtpCall(
   callId: string,
   callerId: string
 ): Promise<void> {
-  // Store call state for StasisStart handler
-  activeCalls.set(callId, {
-    phone,
-    code,
-    otpPlayed: false,
-    systemHangup: false,
-  });
+  const tracker = getCallTracker();
+
+  // Register call with tracker (also sets up AMI correlation)
+  tracker.registerCall(callId, phone, code, callerId);
 
   // Emit calling event
   emitOtpEvent(callId, 'voice', 'calling');
 
   try {
     const channel = client.Channel();
+
+    // Get SIP host from config for P-Asserted-Identity
+    const { getConfig } = await import('../config/index.js');
+    const config = getConfig();
+    const sipHost = config.didww.sipHost;
 
     await channel.originate({
       endpoint: `PJSIP/${phone}@didww`,
@@ -215,8 +243,13 @@ export async function originateOtpCall(
       callerId: `"${callerId}" <${callerId}>`,
       timeout: 30,
       variables: {
+        // Standard caller ID variables
         'CALLERID(num)': callerId,
         'CALLERID(name)': callerId,
+        // PJSIP-specific: Set From header user part
+        'PJSIP_HEADER(add,P-Asserted-Identity)': `<sip:${callerId}@${sipHost}>`,
+        // Enable RPID/PAI header sending
+        'PJSIP_SEND_RPID': 'send_pai',
       },
     });
 
@@ -224,7 +257,7 @@ export async function originateOtpCall(
     emitOtpEvent(callId, 'voice', 'ringing');
     logger.info('Call originated', { callId, phone: phone.slice(0, 3) + '***', callerId });
   } catch (error) {
-    activeCalls.delete(callId);
+    tracker.endCall(callId);
     emitOtpEvent(callId, 'voice', 'failed', { error: 'Call origination failed' });
     throw error;
   }

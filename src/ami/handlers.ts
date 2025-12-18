@@ -3,11 +3,13 @@
  *
  * Processes Asterisk Manager Interface events to capture SIP failures
  * and emit appropriate voice channel events.
+ * Uses CallTrackerService for call correlation.
  */
 
 import { getAmiClient, type AmiHangupEvent } from './client.js';
 import { emitOtpEvent } from '../services/OtpEventService.js';
 import { logger } from '../utils/logger.js';
+import { getCallTracker } from '../services/CallTrackerService.js';
 
 /**
  * Q.850 cause code descriptions
@@ -58,47 +60,12 @@ const Q850_CAUSES: Record<number, { description: string; isFailure: boolean }> =
 };
 
 /**
- * Map to track active calls by channel name
- * Key: channel name pattern, Value: requestId
- */
-const activeCallMap = new Map<string, string>();
-
-/**
- * Register a call for AMI tracking
- * Call this when originating a voice call
- */
-export function registerCallForAmi(channelPattern: string, requestId: string): void {
-  activeCallMap.set(channelPattern, requestId);
-  logger.debug('AMI: Registered call for tracking', { channelPattern, requestId });
-}
-
-/**
- * Unregister a call from AMI tracking
- * Call this when a call completes normally via ARI
- */
-export function unregisterCallFromAmi(channelPattern: string): void {
-  activeCallMap.delete(channelPattern);
-  logger.debug('AMI: Unregistered call from tracking', { channelPattern });
-}
-
-/**
- * Find request ID from channel name
+ * Find request ID from channel name using CallTracker
  * PJSIP channels are named like: PJSIP/14155551234-00000001
  */
-function findRequestIdFromChannel(channel: string): string | null {
-  // Try exact match first
-  if (activeCallMap.has(channel)) {
-    return activeCallMap.get(channel) || null;
-  }
-
-  // Try pattern match (channel might have suffix)
-  for (const [pattern, requestId] of activeCallMap.entries()) {
-    if (channel.includes(pattern) || pattern.includes(channel.split('-')[0])) {
-      return requestId;
-    }
-  }
-
-  return null;
+function findRequestIdFromChannel(channel: string): string | undefined {
+  const tracker = getCallTracker();
+  return tracker.findRequestByChannel(channel);
 }
 
 /**
@@ -113,6 +80,7 @@ function getCauseInfo(cause: number): { description: string; isFailure: boolean 
  */
 function handleHangup(event: AmiHangupEvent): void {
   const { channel, cause, causeText, uniqueid } = event;
+  const tracker = getCallTracker();
 
   // Only process PJSIP channels (our SIP trunk)
   if (!channel.startsWith('PJSIP/')) {
@@ -130,16 +98,26 @@ function handleHangup(event: AmiHangupEvent): void {
     return;
   }
 
+  // Check if call is still being tracked (might have been handled by ARI already)
+  if (!tracker.isTracking(requestId)) {
+    logger.debug('AMI: Call already ended via ARI', { requestId, channel, cause });
+    return;
+  }
+
   // Only emit failure event if this is actually a failure cause
   if (causeInfo.isFailure) {
+    // End call and get durations
+    const result = tracker.endCall(requestId);
+
     logger.info('AMI: SIP call failure detected', {
       requestId,
       channel,
       cause,
       causeText: causeInfo.description,
+      ringDurationMs: result?.durations.ringDurationMs,
     });
 
-    // Emit voice:failed event with Q.850 details
+    // Emit voice:failed event with Q.850 details and durations
     emitOtpEvent(requestId, 'voice', 'failed', {
       q850_cause: cause,
       q850_description: causeInfo.description,
@@ -147,10 +125,9 @@ function handleHangup(event: AmiHangupEvent): void {
       channel,
       uniqueid,
       source: 'ami',
+      ring_duration_ms: result?.durations.ringDurationMs,
+      talk_duration_ms: result?.durations.talkDurationMs,
     });
-
-    // Clean up tracking
-    unregisterCallFromAmi(channel);
   } else {
     // Normal call clearing - the call was handled normally
     // ARI should have already emitted the completion event

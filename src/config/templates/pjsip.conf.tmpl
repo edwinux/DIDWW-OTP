@@ -53,10 +53,11 @@ rewrite_contact=yes
 ice_support=no
 send_rpid=yes
 send_pai=yes
-; Caller ID settings - use DIDWW DID as source number
-callerid=${DIDWW_CALLER_ID} <${DIDWW_CALLER_ID}>
+; Caller ID settings
+; NOTE: Dynamic caller ID is set per-call via ARI channel variables and PJSIP headers.
+; Do NOT set from_user here as it would override the per-call caller ID.
+; The P-Asserted-Identity header is added dynamically in originateOtpCall().
 trust_id_outbound=yes
-from_user=${DIDWW_CALLER_ID}
 from_domain=${DIDWW_SIP_HOST}
 
 ; -----------------------------------------------------------------------------
