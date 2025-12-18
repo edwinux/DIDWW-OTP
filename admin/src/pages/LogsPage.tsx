@@ -39,12 +39,13 @@ const columns: ColumnDef<OtpRequest>[] = [
     header: 'Status',
     cell: ({ row }) => (
       <div className="flex items-center gap-2">
-        <StatusBadge status={row.original.status} />
-        {row.original.shadow_banned === 1 && (
+        {row.original.shadow_banned === 1 ? (
           <Badge variant="destructive" className="text-xs px-1.5 py-0">
             <ShieldOff className="h-3 w-3 mr-0.5" />
             Banned
           </Badge>
+        ) : (
+          <StatusBadge status={row.original.status} />
         )}
       </div>
     ),

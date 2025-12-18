@@ -283,10 +283,23 @@ export class LogsController {
       const trend = this.otpRepo.get24hTrend();
 
       // Get status breakdown (with time filter)
+      // Shadow-banned requests should be counted as "banned", not their simulated status
       const statuses = this.otpRepo.getDistinctValues('status');
       const byStatus: Record<string, number> = {};
       for (const status of statuses) {
-        byStatus[status] = this.otpRepo.countFiltered({ ...timeFilter, status });
+        // Count only non-banned requests for each status
+        byStatus[status] = this.otpRepo.countFiltered({ ...timeFilter, status, shadow_banned: false });
+      }
+      // Add banned count separately
+      const bannedCount = this.otpRepo.countFiltered({ ...timeFilter, shadow_banned: true });
+      if (bannedCount > 0) {
+        byStatus['banned'] = bannedCount;
+      }
+      // Remove statuses with 0 count
+      for (const status of Object.keys(byStatus)) {
+        if (byStatus[status] === 0) {
+          delete byStatus[status];
+        }
       }
 
       // Get average fraud score (with time filter)
