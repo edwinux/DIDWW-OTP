@@ -13,6 +13,17 @@ exten => _X.,1,NoOp(Outbound call to ${EXTEN})
  same => n,Stasis(otp-gateway)
  same => n,Hangup()
 
+; Hangup handler - capture SIP response code and emit via AMI UserEvent
+; HANGUPCAUSE provides the actual SIP response (e.g., "SIP 487 Request Terminated")
+exten => h,1,NoOp(Hangup handler - capturing SIP cause)
+ same => n,Set(HANGUP_KEYS=${HANGUPCAUSE_KEYS()})
+ same => n,Set(SIP_CAUSE=${HANGUPCAUSE(${HANGUP_KEYS},tech)})
+ same => n,Set(SIP_CODE=${CUT(SIP_CAUSE, ,2)})
+ same => n,NoOp(SIP Cause: ${SIP_CAUSE}, Code: ${SIP_CODE})
+ same => n,GotoIf($["${SIP_CODE}" = ""]?done)
+ same => n,UserEvent(SIPCause,Channel: ${CHANNEL},SIPCode: ${SIP_CODE},SIPCause: ${SIP_CAUSE},Uniqueid: ${UNIQUEID})
+ same => n(done),NoOp(Hangup handler complete)
+
 ; -----------------------------------------------------------------------------
 ; Default context - Catch-all for misconfigured calls
 ; -----------------------------------------------------------------------------
