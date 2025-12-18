@@ -96,8 +96,8 @@ export class OtpEventService {
       const statusKey = `${channel}:${eventType}`;
       const newStatus = EVENT_TO_STATUS_MAP[statusKey];
 
-      // Update OTP request with new channel_status
-      this.updateRequestStatus(requestId, channel, eventType, newStatus);
+      // Update OTP request with new channel_status and error_message if present
+      this.updateRequestStatus(requestId, channel, eventType, newStatus, eventData);
 
       // Broadcast via WebSocket
       this.broadcastEvent(requestId, channel, eventType, eventData);
@@ -123,7 +123,8 @@ export class OtpEventService {
     requestId: string,
     channel: string,
     channelStatus: string,
-    status?: OtpStatus
+    status?: OtpStatus,
+    eventData?: Record<string, unknown>
   ): void {
     const updates: string[] = ['channel_status = ?', 'updated_at = ?'];
     const values: (string | number)[] = [channelStatus, Date.now()];
@@ -131,6 +132,12 @@ export class OtpEventService {
     if (status) {
       updates.push('status = ?');
       values.push(status);
+    }
+
+    // Store error message if present in event data
+    if (eventData?.error) {
+      updates.push('error_message = ?');
+      values.push(String(eventData.error));
     }
 
     // Only update channel if not already set

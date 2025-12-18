@@ -16,7 +16,8 @@ import { getCallTracker } from '../services/CallTrackerService.js';
  * These codes indicate why a call was disconnected
  */
 const Q850_CAUSES: Record<number, { description: string; isFailure: boolean }> = {
-  0: { description: 'Call failed (no response from network)', isFailure: true },
+  // Cause 0 is ambiguous - will be refined based on call state in handleHangup()
+  0: { description: 'Call failed', isFailure: true },
   1: { description: 'Unallocated number', isFailure: true },
   2: { description: 'No route to network', isFailure: true },
   3: { description: 'No route to destination', isFailure: true },
@@ -136,21 +137,32 @@ function handleHangup(event: AmiHangupEvent): void {
     // End call and get durations
     const result = tracker.endCall(requestId);
 
+    // Refine cause 0 description based on call state
+    // Cause 0 happens when Asterisk sends CANCEL (e.g., ringing timeout)
+    // If call was ringing, it's "No answer"; otherwise "No response"
+    let description = causeInfo.description;
+    if (cause === 0) {
+      const wasRinging = result?.durations.ringDurationMs && result.durations.ringDurationMs > 0;
+      description = wasRinging
+        ? 'No answer (ringing timeout)'
+        : 'Call failed (no response from network)';
+    }
+
     logger.info('AMI: SIP call failure detected', {
       requestId,
       channel,
       cause,
-      causeText: causeInfo.description,
+      causeText: description,
       ringDurationMs: result?.durations.ringDurationMs,
     });
 
     // Emit voice:failed event with Q.850 details and durations
     // Include 'error' field for storage in error_message column
-    const errorMessage = `Voice call failed: ${causeInfo.description} (Q.850 cause ${cause})`;
+    const errorMessage = `Voice call failed: ${description} (Q.850 cause ${cause})`;
     emitOtpEvent(requestId, 'voice', 'failed', {
       error: errorMessage,
       q850_cause: cause,
-      q850_description: causeInfo.description,
+      q850_description: description,
       ami_cause_text: causeText,
       channel,
       uniqueid,
