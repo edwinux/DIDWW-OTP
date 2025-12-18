@@ -135,7 +135,10 @@ const configSchema = z.object({
   // ASN Database configuration for fraud detection
   asn: z.object({
     enabled: z.coerce.boolean().default(true),
-    dataPath: z.string().default('/data/asn.mmdb'),
+    dataPath: z.string().default('/data/asn.mmdb').refine(
+      (path) => path.startsWith('/data/') || path.startsWith('./data/'),
+      { message: 'ASN_DATA_PATH must be within /data/ directory for security' }
+    ),
     updateIntervalHours: z.coerce.number().int().min(1).max(8760).default(168), // Weekly
     updateRateLimitHours: z.coerce.number().int().min(0).max(24).default(1), // Max once per hour
     unresolvedThreshold: z.coerce.number().int().min(1).max(10000).default(100),

@@ -69,6 +69,7 @@ interface PendingRequest {
   ip: string;
   resolve: (result: AsnLookupResult | null) => void;
   timestamp: number;
+  timeoutId?: NodeJS.Timeout;
 }
 
 /**
@@ -252,20 +253,20 @@ class AsnDatabaseService {
    */
   private waitForUpdate(ip: string): Promise<AsnLookupResult | null> {
     return new Promise((resolve) => {
+      const timeoutId = setTimeout(() => {
+        const index = this.pendingRequests.findIndex((r) => r.ip === ip);
+        if (index !== -1) {
+          this.pendingRequests.splice(index, 1);
+          resolve(this.lookup(ip));
+        }
+      }, 10000);
+
       this.pendingRequests.push({
         ip,
         resolve,
         timestamp: Date.now(),
+        timeoutId,
       });
-
-      // Timeout after 10 seconds
-      setTimeout(() => {
-        const index = this.pendingRequests.findIndex((r) => r.ip === ip);
-        if (index !== -1) {
-          this.pendingRequests.splice(index, 1);
-          resolve(this.lookup(ip)); // Return whatever we have
-        }
-      }, 10000);
     });
   }
 
@@ -277,6 +278,7 @@ class AsnDatabaseService {
     this.pendingRequests = [];
 
     for (const request of pending) {
+      if (request.timeoutId) clearTimeout(request.timeoutId);
       const result = this.lookup(request.ip);
       request.resolve(result);
     }
