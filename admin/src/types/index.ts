@@ -162,3 +162,20 @@ export interface CallerIdTestResult {
   sms: { prefix: string; callerId: string } | null;
   voice: { prefix: string; callerId: string } | null;
 }
+
+export interface WhitelistEntry {
+  id: number;
+  type: 'ip' | 'phone';
+  value: string;
+  description: string | null;
+  created_at: number;
+}
+
+export interface WhitelistResponse {
+  data: WhitelistEntry[];
+  meta: {
+    total: number;
+    ip: number;
+    phone: number;
+  };
+}

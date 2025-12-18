@@ -12,6 +12,7 @@ import { LogsController } from './controllers/LogsController.js';
 import { DatabaseController } from './controllers/DatabaseController.js';
 import { TesterController } from './controllers/TesterController.js';
 import { CallerIdRoutingController } from './controllers/CallerIdRoutingController.js';
+import { WhitelistController } from './controllers/WhitelistController.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -24,6 +25,7 @@ export function registerAdminRoutes(app: Express, dispatchService: DispatchServi
   const databaseController = new DatabaseController();
   const testerController = new TesterController(dispatchService);
   const callerIdRoutingController = new CallerIdRoutingController();
+  const whitelistController = new WhitelistController();
 
   // ============================================================================
   // Authentication Routes (IP whitelist only, no session required)
@@ -147,6 +149,22 @@ export function registerAdminRoutes(app: Express, dispatchService: DispatchServi
 
   app.post('/admin/caller-id-routes/:id/toggle', requireAdminAuth, (req: Request, res: Response) => {
     callerIdRoutingController.toggleRoute(req, res);
+  });
+
+  // ============================================================================
+  // Whitelist Routes (System Settings)
+  // ============================================================================
+
+  app.get('/admin/whitelist', requireAdminAuth, (req: Request, res: Response) => {
+    whitelistController.getEntries(req, res);
+  });
+
+  app.post('/admin/whitelist', requireAdminAuth, (req: Request, res: Response) => {
+    whitelistController.createEntry(req, res);
+  });
+
+  app.delete('/admin/whitelist/:id', requireAdminAuth, (req: Request, res: Response) => {
+    whitelistController.deleteEntry(req, res);
   });
 
   // ============================================================================
