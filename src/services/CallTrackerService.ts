@@ -157,6 +157,25 @@ class CallTrackerService {
   }
 
   /**
+   * Find request ID by phone number (ConnectedLineNum from AMI)
+   * Used when channel name correlation fails (e.g., PJSIP/didww-00000000)
+   */
+  findRequestByPhone(phone: string): string | undefined {
+    // Normalize phone (remove + prefix if present)
+    const normalizedPhone = phone.replace(/^\+/, '');
+
+    // Search active calls for matching phone
+    for (const [requestId, state] of this.activeCalls.entries()) {
+      const statePhone = state.phone.replace(/^\+/, '');
+      if (statePhone === normalizedPhone) {
+        return requestId;
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
    * Find request ID from Asterisk unique ID
    */
   findRequestByUniqueId(uniqueId: string): string | undefined {
