@@ -113,3 +113,69 @@ export function getAsnBlocklistCount(): number {
   const result = db.prepare('SELECT COUNT(*) as count FROM asn_blocklist').get() as { count: number };
   return result.count;
 }
+
+/**
+ * Default caller ID routes
+ * Provides fallback routes for fresh installations
+ */
+const DEFAULT_CALLER_ID_ROUTES: Array<{
+  channel: 'sms' | 'voice';
+  prefix: string;
+  caller_id: string;
+  description: string;
+}> = [
+  {
+    channel: 'sms',
+    prefix: '*',
+    caller_id: '12345678900',
+    description: 'Default SMS caller ID (update in Settings)',
+  },
+  {
+    channel: 'voice',
+    prefix: '*',
+    caller_id: '12345678900',
+    description: 'Default Voice caller ID (update in Settings)',
+  },
+];
+
+/**
+ * Seed default caller ID routes
+ * Idempotent - only inserts if table is empty
+ */
+export function seedCallerIdRoutes(): void {
+  const db = dbManager.getDb();
+
+  // Check if already seeded
+  const count = db.prepare('SELECT COUNT(*) as count FROM caller_id_routes').get() as { count: number };
+
+  if (count.count > 0) {
+    logger.debug('Caller ID routes already seeded', { count: count.count });
+    return;
+  }
+
+  logger.info('Seeding default caller ID routes...', { entries: DEFAULT_CALLER_ID_ROUTES.length });
+
+  const now = Date.now();
+  const insert = db.prepare(
+    'INSERT OR IGNORE INTO caller_id_routes (channel, prefix, caller_id, description, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)'
+  );
+
+  const insertMany = db.transaction((entries: typeof DEFAULT_CALLER_ID_ROUTES) => {
+    for (const entry of entries) {
+      insert.run(entry.channel, entry.prefix, entry.caller_id, entry.description, now, now);
+    }
+  });
+
+  insertMany(DEFAULT_CALLER_ID_ROUTES);
+
+  logger.info('Default caller ID routes seeded successfully', { entries: DEFAULT_CALLER_ID_ROUTES.length });
+}
+
+/**
+ * Get count of caller ID routes
+ */
+export function getCallerIdRoutesCount(): number {
+  const db = dbManager.getDb();
+  const result = db.prepare('SELECT COUNT(*) as count FROM caller_id_routes').get() as { count: number };
+  return result.count;
+}

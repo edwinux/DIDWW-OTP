@@ -5,7 +5,7 @@
  */
 
 import { getConfig } from './config/index.js';
-import { dbManager, runMigrations, seedAsnBlocklist } from './database/index.js';
+import { dbManager, runMigrations, seedAsnBlocklist, seedCallerIdRoutes } from './database/index.js';
 import { ariManager } from './ari/client.js';
 import { registerStasisHandlers } from './ari/handlers.js';
 import { OtpRequestRepository, FraudRulesRepository, WebhookLogRepository } from './repositories/index.js';
@@ -33,6 +33,7 @@ async function main(): Promise<void> {
     dbManager.connect(config.database.path);
     runMigrations();
     seedAsnBlocklist();
+    seedCallerIdRoutes();
 
     // Initialize caller ID router (loads routes from database)
     initializeCallerIdRouter();

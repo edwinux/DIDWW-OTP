@@ -48,6 +48,15 @@ export class CallerIdRoutingController {
   }
 
   /**
+   * Reload the caller ID router cache after route changes
+   */
+  private reloadCache(): void {
+    const router = getCallerIdRouter();
+    router.reloadRoutes();
+    logger.debug('Caller ID routes cache auto-reloaded');
+  }
+
+  /**
    * GET /admin/caller-id-routes
    * List all routes, optionally filtered by channel
    */
@@ -152,6 +161,7 @@ export class CallerIdRoutingController {
       });
 
       logger.info('Created caller ID route', { id: route.id, channel, prefix: normalizedPrefix });
+      this.reloadCache();
 
       res.status(201).json({ data: route });
     } catch (error) {
@@ -216,6 +226,7 @@ export class CallerIdRoutingController {
       const route = this.repository.update(id, { prefix, caller_id, description, enabled });
 
       logger.info('Updated caller ID route', { id });
+      this.reloadCache();
 
       res.json({ data: route });
     } catch (error) {
@@ -246,6 +257,7 @@ export class CallerIdRoutingController {
       }
 
       logger.info('Deleted caller ID route', { id });
+      this.reloadCache();
 
       res.json({ success: true });
     } catch (error) {
@@ -276,6 +288,7 @@ export class CallerIdRoutingController {
       }
 
       logger.info('Toggled caller ID route', { id, enabled: route.enabled });
+      this.reloadCache();
 
       res.json({ data: route });
     } catch (error) {
