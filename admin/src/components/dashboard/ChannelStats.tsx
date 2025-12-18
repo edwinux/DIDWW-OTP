@@ -93,7 +93,7 @@ export function ChannelStats({ channel, stats }: ChannelStatsProps) {
               <p className="text-2xl font-bold text-muted-foreground">Soon</p>
             ) : (
               <p className={`text-2xl font-bold ${smsStats.totalCost === null ? 'text-muted-foreground' : ''}`}>
-                {formatCost(smsStats.totalCost, 2)}
+                {formatCost(smsStats.totalCost, 3)}
               </p>
             )}
           </div>
