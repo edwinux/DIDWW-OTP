@@ -217,7 +217,7 @@ export class LogsController {
 
   /**
    * GET /admin/logs/stats
-   * Get summary statistics
+   * Get summary statistics with channel-specific breakdowns
    */
   async getStats(_req: Request, res: Response): Promise<void> {
     try {
@@ -229,6 +229,9 @@ export class LogsController {
 
       // Get last 24h count
       const last24h = this.otpRepo.countFiltered({ date_from: oneDayAgo });
+
+      // Get 24h trend
+      const trend = this.otpRepo.get24hTrend();
 
       // Get status breakdown
       const statuses = this.otpRepo.getDistinctValues('status');
@@ -250,11 +253,41 @@ export class LogsController {
         // Ignore if fraud_score column doesn't exist
       }
 
+      // Get voice channel stats
+      const voiceRaw = this.otpRepo.getChannelStats('voice');
+      const voice = {
+        total: voiceRaw.total,
+        avgDuration: voiceRaw.avgDuration ? Math.round(voiceRaw.avgDuration * 10) / 10 : null,
+        successRate: voiceRaw.total > 0 ? Math.round((voiceRaw.delivered / voiceRaw.total) * 100) : 0,
+        authSuccessRate: voiceRaw.total > 0 ? Math.round((voiceRaw.verified / voiceRaw.total) * 100) : 0,
+        avgCost: null, // Placeholder for future
+      };
+
+      // Get SMS channel stats
+      const smsRaw = this.otpRepo.getChannelStats('sms');
+      const sms = {
+        total: smsRaw.total,
+        deliverySuccessRate: smsRaw.total > 0 ? Math.round((smsRaw.delivered / smsRaw.total) * 100) : 0,
+        authSuccessRate: smsRaw.total > 0 ? Math.round((smsRaw.verified / smsRaw.total) * 100) : 0,
+        avgCost: null, // Placeholder for future
+      };
+
+      // Get recent events
+      const recentVerified = this.otpRepo.getRecentVerified(5);
+      const recentFailed = this.otpRepo.getRecentFailed(5);
+      const recentBanned = this.otpRepo.getRecentBanned(5);
+
       res.json({
         total,
         last24h,
+        trend,
         byStatus,
         avgFraudScore,
+        voice,
+        sms,
+        recentVerified,
+        recentFailed,
+        recentBanned,
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
