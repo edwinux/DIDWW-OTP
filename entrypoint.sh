@@ -8,6 +8,8 @@ export SIP_PORT=${SIP_PORT:-5060}
 export RTP_PORT_START=${RTP_PORT_START:-10000}
 export RTP_PORT_END=${RTP_PORT_END:-10020}
 export ARI_PASSWORD=${ARI_PASSWORD:-internal-ari-secret}
+export AMI_SECRET=${AMI_SECRET:-internal-ami-secret}
+export AMI_ENABLED=${AMI_ENABLED:-true}
 
 # Validate required variables
 if [ -z "$DIDWW_SIP_HOST" ] || [ -z "$DIDWW_USERNAME" ] || [ -z "$DIDWW_PASSWORD" ] || [ -z "$PUBLIC_IP" ] || [ -z "$API_SECRET" ]; then
@@ -64,6 +66,7 @@ envsubst < /etc/asterisk/templates/features.conf.tmpl > /etc/asterisk/features.c
 envsubst < /etc/asterisk/templates/ccss.conf.tmpl > /etc/asterisk/ccss.conf
 envsubst < /etc/asterisk/templates/acl.conf.tmpl > /etc/asterisk/acl.conf
 envsubst < /etc/asterisk/templates/udptl.conf.tmpl > /etc/asterisk/udptl.conf
+envsubst < /etc/asterisk/templates/manager.conf.tmpl > /etc/asterisk/manager.conf
 
 # Fix permissions so asterisk user can read configs
 chown asterisk:asterisk /etc/asterisk/*.conf
