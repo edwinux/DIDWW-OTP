@@ -32,6 +32,16 @@ export interface AmiHangupEvent {
 }
 
 /**
+ * AMI Newchannel event data - used to track channel creation
+ */
+export interface AmiNewchannelEvent {
+  channel: string;
+  uniqueid: string;
+  exten: string; // The dialed extension (destination phone)
+  callerIdNum?: string;
+}
+
+/**
  * AMI connection states
  */
 type AmiState = 'disconnected' | 'connecting' | 'authenticating' | 'connected';
@@ -256,6 +266,30 @@ export class AmiClient extends EventEmitter {
 
     // Log all AMI events (INFO level to verify subscription is working)
     logger.info('AMI: Event received', { type: eventType, channel: event['Channel'] });
+
+    // Capture Newchannel events for channel tracking
+    // This allows us to associate channel names (PJSIP/didww-xxx) with phone numbers
+    if (eventType === 'Newchannel') {
+      const channel = event['Channel'] || '';
+      const exten = event['Exten'] || '';
+
+      // Only process PJSIP/didww channels (our outbound trunk)
+      if (channel.startsWith('PJSIP/didww') && exten) {
+        const newchannelEvent: AmiNewchannelEvent = {
+          channel,
+          uniqueid: event['Uniqueid'] || '',
+          exten,
+          callerIdNum: event['CallerIDNum'],
+        };
+
+        logger.info('AMI: Newchannel for tracking', {
+          channel,
+          exten,
+          uniqueid: newchannelEvent.uniqueid,
+        });
+        this.emit('newchannel', newchannelEvent);
+      }
+    }
 
     // We're primarily interested in Hangup events for SIP failure detection
     if (eventType === 'Hangup') {
