@@ -8,7 +8,7 @@ import type Database from 'better-sqlite3';
 import { getDb } from '../database/index.js';
 
 /**
- * OTP request status values
+ * OTP request status values (combined/legacy status)
  */
 export type OtpStatus =
   | 'pending'
@@ -19,6 +19,14 @@ export type OtpStatus =
   | 'verified'
   | 'rejected'
   | 'expired';
+
+/**
+ * Authentication verification status values
+ * - null: Not verified yet (no auth feedback received)
+ * - 'verified': User successfully entered correct OTP code
+ * - 'wrong_code': User entered incorrect OTP code
+ */
+export type AuthStatus = null | 'verified' | 'wrong_code';
 
 /**
  * OTP request record
@@ -32,6 +40,7 @@ export interface OtpRequest {
   status: OtpStatus;
   channel: string | null;
   channel_status: string | null;
+  auth_status: AuthStatus;
   channels_requested: string | null;
   ip_address: string | null;
   ip_subnet: string | null;
@@ -165,6 +174,18 @@ export class OtpRequestRepository {
 
     const stmt = this.db.prepare(`UPDATE otp_requests SET ${updates.join(', ')} WHERE id = ?`);
     stmt.run(...values);
+  }
+
+  /**
+   * Update authentication status
+   */
+  updateAuthStatus(id: string, authStatus: 'verified' | 'wrong_code'): void {
+    const stmt = this.db.prepare(`
+      UPDATE otp_requests
+      SET auth_status = ?, updated_at = ?
+      WHERE id = ?
+    `);
+    stmt.run(authStatus, Date.now(), id);
   }
 
   /**
