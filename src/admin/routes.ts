@@ -11,6 +11,7 @@ import { AuthController } from './controllers/AuthController.js';
 import { LogsController } from './controllers/LogsController.js';
 import { DatabaseController } from './controllers/DatabaseController.js';
 import { TesterController } from './controllers/TesterController.js';
+import { CallerIdRoutingController } from './controllers/CallerIdRoutingController.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -22,6 +23,7 @@ export function registerAdminRoutes(app: Express, dispatchService: DispatchServi
   const logsController = new LogsController();
   const databaseController = new DatabaseController();
   const testerController = new TesterController(dispatchService);
+  const callerIdRoutingController = new CallerIdRoutingController();
 
   // ============================================================================
   // Authentication Routes (IP whitelist only, no session required)
@@ -105,6 +107,46 @@ export function registerAdminRoutes(app: Express, dispatchService: DispatchServi
 
   app.post('/admin/test/verify/:testId', requireAdminAuth, (req: Request, res: Response) => {
     testerController.verifyTestOtp(req, res);
+  });
+
+  // ============================================================================
+  // Caller ID Routing Routes (Settings)
+  // ============================================================================
+
+  app.get('/admin/caller-id-routes', requireAdminAuth, (req: Request, res: Response) => {
+    callerIdRoutingController.getRoutes(req, res);
+  });
+
+  app.get('/admin/caller-id-routes/stats', requireAdminAuth, (req: Request, res: Response) => {
+    callerIdRoutingController.getStats(req, res);
+  });
+
+  app.post('/admin/caller-id-routes/reload', requireAdminAuth, (req: Request, res: Response) => {
+    callerIdRoutingController.reloadRoutes(req, res);
+  });
+
+  app.post('/admin/caller-id-routes/test', requireAdminAuth, (req: Request, res: Response) => {
+    callerIdRoutingController.testRouting(req, res);
+  });
+
+  app.get('/admin/caller-id-routes/:id', requireAdminAuth, (req: Request, res: Response) => {
+    callerIdRoutingController.getRoute(req, res);
+  });
+
+  app.post('/admin/caller-id-routes', requireAdminAuth, (req: Request, res: Response) => {
+    callerIdRoutingController.createRoute(req, res);
+  });
+
+  app.put('/admin/caller-id-routes/:id', requireAdminAuth, (req: Request, res: Response) => {
+    callerIdRoutingController.updateRoute(req, res);
+  });
+
+  app.delete('/admin/caller-id-routes/:id', requireAdminAuth, (req: Request, res: Response) => {
+    callerIdRoutingController.deleteRoute(req, res);
+  });
+
+  app.post('/admin/caller-id-routes/:id/toggle', requireAdminAuth, (req: Request, res: Response) => {
+    callerIdRoutingController.toggleRoute(req, res);
   });
 
   // ============================================================================

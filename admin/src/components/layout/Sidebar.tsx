@@ -9,6 +9,7 @@ import {
   Activity,
   Database,
   FlaskConical,
+  Settings,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -28,6 +29,7 @@ const navItems: NavItem[] = [
   { to: '/logs', icon: <Activity className="h-5 w-5" />, label: 'Live Logs' },
   { to: '/database', icon: <Database className="h-5 w-5" />, label: 'Database' },
   { to: '/tester', icon: <FlaskConical className="h-5 w-5" />, label: 'Test Lab' },
+  { to: '/settings', icon: <Settings className="h-5 w-5" />, label: 'Settings' },
 ];
 
 export function Sidebar() {

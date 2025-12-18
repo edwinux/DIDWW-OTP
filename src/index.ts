@@ -5,7 +5,7 @@
  */
 
 import { getConfig } from './config/index.js';
-import { dbManager, runMigrations, seedAsnBlocklist } from './database/index.js';
+import { dbManager, runMigrations, seedAsnBlocklist, seedCallerIdRoutes } from './database/index.js';
 import { ariManager } from './ari/client.js';
 import { registerStasisHandlers } from './ari/handlers.js';
 import { getAmiClient } from './ami/client.js';
@@ -13,6 +13,7 @@ import { registerAmiHandlers } from './ami/handlers.js';
 import { OtpRequestRepository, FraudRulesRepository, WebhookLogRepository } from './repositories/index.js';
 import { SmsChannelProvider, VoiceChannelProvider } from './channels/index.js';
 import { FraudEngine, WebhookService, DispatchService } from './services/index.js';
+import { initializeCallerIdRouter } from './services/CallerIdRouter.js';
 import { initAsnDatabase, getAsnDatabase } from './services/AsnDatabase.js';
 import { createServer } from './server.js';
 import { startAdminServer } from './admin/index.js';
@@ -35,6 +36,11 @@ async function main(): Promise<void> {
     dbManager.connect(config.database.path);
     runMigrations();
     seedAsnBlocklist();
+    seedCallerIdRoutes();
+
+    // Initialize caller ID router (loads routes from database)
+    initializeCallerIdRouter();
+    logger.info('Caller ID router initialized');
 
     // Initialize ASN database for fraud detection
     logger.info('Initializing ASN database...', { enabled: config.asn.enabled });
@@ -62,8 +68,6 @@ async function main(): Promise<void> {
         apiEndpoint: config.sms.apiEndpoint,
         username: config.sms.username,
         password: config.sms.password,
-        callerId: config.sms.callerId || config.didww.callerId,
-        callerIdUsCanada: config.sms.callerIdUsCanada || config.didww.callerIdUsCanada,
         messageTemplate: config.sms.messageTemplate,
         callbackUrl: config.sms.callbackUrl,
       });
@@ -75,7 +79,6 @@ async function main(): Promise<void> {
 
     // Voice channel (always available if ARI connects)
     const voiceProvider = new VoiceChannelProvider({
-      callerId: config.didww.callerId,
       messageTemplate: config.voice.messageTemplate,
       speed: config.voice.speed,
       timeout: 30,

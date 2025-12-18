@@ -180,15 +180,20 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * Originate an OTP call
+ *
+ * @param client - ARI client
+ * @param phone - Destination phone number (E.164 format)
+ * @param code - OTP code to speak
+ * @param callId - Unique call/request ID
+ * @param callerId - Caller ID to use (from CallerIdRouter)
  */
 export async function originateOtpCall(
   client: AriClient,
   phone: string,
   code: string,
-  callId: string
+  callId: string,
+  callerId: string
 ): Promise<void> {
-  const config = getConfig();
-
   // Store call state for StasisStart handler
   activeCalls.set(callId, {
     phone,
@@ -207,17 +212,17 @@ export async function originateOtpCall(
       endpoint: `PJSIP/${phone}@didww`,
       app: 'otp-stasis',
       appArgs: callId,
-      callerId: `"${config.didww.callerId}" <${config.didww.callerId}>`,
+      callerId: `"${callerId}" <${callerId}>`,
       timeout: 30,
       variables: {
-        'CALLERID(num)': config.didww.callerId,
-        'CALLERID(name)': config.didww.callerId,
+        'CALLERID(num)': callerId,
+        'CALLERID(name)': callerId,
       },
     });
 
     // Emit ringing event after successful originate
     emitOtpEvent(callId, 'voice', 'ringing');
-    logger.info('Call originated', { callId, phone: phone.slice(0, 3) + '***' });
+    logger.info('Call originated', { callId, phone: phone.slice(0, 3) + '***', callerId });
   } catch (error) {
     activeCalls.delete(callId);
     emitOtpEvent(callId, 'voice', 'failed', { error: 'Call origination failed' });
