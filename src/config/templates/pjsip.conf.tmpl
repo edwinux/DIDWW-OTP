@@ -14,6 +14,8 @@ protocol=udp
 bind=0.0.0.0:${SIP_PORT}
 external_media_address=${PUBLIC_IP}
 external_signaling_address=${PUBLIC_IP}
+; Apply ACL to reject traffic from non-DIDWW sources
+acl=didww-only
 
 ; -----------------------------------------------------------------------------
 ; DIDWW Authentication (used for outbound INVITE requests)
