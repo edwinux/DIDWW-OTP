@@ -56,6 +56,7 @@ export interface OtpRequest {
   created_at: number;
   updated_at: number;
   expires_at: number | null;
+  sms_cost_units: number | null;
 }
 
 /**
@@ -186,6 +187,20 @@ export class OtpRequestRepository {
       WHERE id = ?
     `);
     stmt.run(authStatus, Date.now(), id);
+  }
+
+  /**
+   * Update SMS cost for a request
+   * @param id - OTP request ID
+   * @param costUnits - Cost in 1/10000 dollars (from SmsCost.toStorageUnits())
+   */
+  updateSmsCost(id: string, costUnits: number): void {
+    const stmt = this.db.prepare(`
+      UPDATE otp_requests
+      SET sms_cost_units = ?, updated_at = ?
+      WHERE id = ?
+    `);
+    stmt.run(costUnits, Date.now(), id);
   }
 
   /**
@@ -733,6 +748,8 @@ export class OtpRequestRepository {
     delivered: number;
     verified: number;
     avgDuration: number | null;
+    avgCostUnits: number | null;
+    totalCostUnits: number | null;
   } {
     const conditions = ['channel = ?'];
     const params: (string | number)[] = [channel];
@@ -754,7 +771,9 @@ export class OtpRequestRepository {
         SUM(CASE WHEN shadow_banned = 0 AND status IN ('delivered', 'sent', 'verified') THEN 1 ELSE 0 END) as delivered,
         SUM(CASE WHEN shadow_banned = 0 AND auth_status = 'verified' THEN 1 ELSE 0 END) as verified,
         AVG(CASE WHEN shadow_banned = 0 AND answer_time IS NOT NULL AND end_time IS NOT NULL
-            THEN (end_time - answer_time) / 1000.0 ELSE NULL END) as avgDuration
+            THEN (end_time - answer_time) / 1000.0 ELSE NULL END) as avgDuration,
+        AVG(CASE WHEN shadow_banned = 0 AND sms_cost_units IS NOT NULL THEN sms_cost_units ELSE NULL END) as avgCostUnits,
+        SUM(CASE WHEN shadow_banned = 0 AND sms_cost_units IS NOT NULL THEN sms_cost_units ELSE NULL END) as totalCostUnits
       FROM otp_requests
       WHERE ${whereClause}
     `);
@@ -763,6 +782,8 @@ export class OtpRequestRepository {
       delivered: number;
       verified: number;
       avgDuration: number | null;
+      avgCostUnits: number | null;
+      totalCostUnits: number | null;
     };
     return result;
   }
