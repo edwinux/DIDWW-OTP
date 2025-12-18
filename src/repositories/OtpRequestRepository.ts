@@ -391,6 +391,7 @@ export class OtpRequestRepository {
 
   /**
    * Get channel-specific statistics
+   * Excludes shadow_banned requests from success/delivery rates
    */
   getChannelStats(channel: 'sms' | 'voice'): {
     total: number;
@@ -400,10 +401,10 @@ export class OtpRequestRepository {
   } {
     const stmt = this.db.prepare(`
       SELECT
-        COUNT(*) as total,
-        SUM(CASE WHEN status IN ('delivered', 'sent', 'verified') THEN 1 ELSE 0 END) as delivered,
-        SUM(CASE WHEN auth_status = 'verified' THEN 1 ELSE 0 END) as verified,
-        AVG(CASE WHEN answer_time IS NOT NULL AND end_time IS NOT NULL
+        COUNT(CASE WHEN shadow_banned = 0 THEN 1 END) as total,
+        SUM(CASE WHEN shadow_banned = 0 AND status IN ('delivered', 'sent', 'verified') THEN 1 ELSE 0 END) as delivered,
+        SUM(CASE WHEN shadow_banned = 0 AND auth_status = 'verified' THEN 1 ELSE 0 END) as verified,
+        AVG(CASE WHEN shadow_banned = 0 AND answer_time IS NOT NULL AND end_time IS NOT NULL
             THEN (end_time - answer_time) / 1000.0 ELSE NULL END) as avgDuration
       FROM otp_requests
       WHERE channel = ?
@@ -630,6 +631,7 @@ export class OtpRequestRepository {
 
   /**
    * Get channel-specific statistics with optional date filtering
+   * Excludes shadow_banned requests from success/delivery rates
    */
   getChannelStatsFiltered(
     channel: 'sms' | 'voice',
@@ -657,10 +659,10 @@ export class OtpRequestRepository {
 
     const stmt = this.db.prepare(`
       SELECT
-        COUNT(*) as total,
-        SUM(CASE WHEN status IN ('delivered', 'sent', 'verified') THEN 1 ELSE 0 END) as delivered,
-        SUM(CASE WHEN auth_status = 'verified' THEN 1 ELSE 0 END) as verified,
-        AVG(CASE WHEN answer_time IS NOT NULL AND end_time IS NOT NULL
+        COUNT(CASE WHEN shadow_banned = 0 THEN 1 END) as total,
+        SUM(CASE WHEN shadow_banned = 0 AND status IN ('delivered', 'sent', 'verified') THEN 1 ELSE 0 END) as delivered,
+        SUM(CASE WHEN shadow_banned = 0 AND auth_status = 'verified' THEN 1 ELSE 0 END) as verified,
+        AVG(CASE WHEN shadow_banned = 0 AND answer_time IS NOT NULL AND end_time IS NOT NULL
             THEN (end_time - answer_time) / 1000.0 ELSE NULL END) as avgDuration
       FROM otp_requests
       WHERE ${whereClause}
