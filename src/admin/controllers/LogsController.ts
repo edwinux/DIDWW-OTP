@@ -345,7 +345,9 @@ export class LogsController {
         avgDuration: voiceRaw.avgDuration ? Math.round(voiceRaw.avgDuration * 10) / 10 : null,
         successRate: voiceRaw.total > 0 ? Math.round((voiceRaw.delivered / voiceRaw.total) * 100) : 0,
         authSuccessRate: voiceRaw.total > 0 ? Math.round((voiceRaw.verified / voiceRaw.total) * 100) : 0,
-        avgCost: null, // Placeholder for future
+        // Convert cost units (1/10000 dollars) to USD
+        avgCost: voiceRaw.avgCostUnits !== null ? voiceRaw.avgCostUnits / 10000 : null,
+        totalCost: voiceRaw.totalCostUnits !== null && voiceRaw.totalCostUnits > 0 ? voiceRaw.totalCostUnits / 10000 : null,
       };
 
       // Get SMS channel stats (with time filter)
