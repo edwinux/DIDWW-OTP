@@ -17,7 +17,7 @@ import { logger } from '../utils/logger.js';
  */
 const didwwCdrSchema = z.object({
   id: z.string(),
-  call_id: z.string(),
+  call_id: z.string().nullable().optional(),
   type: z.string(),
   time_start: z.string(),
   time_connect: z.string().nullable().optional(),
@@ -26,23 +26,23 @@ const didwwCdrSchema = z.object({
   billing_duration: z.number(),
   rate: z.number(),
   price: z.number(),
-  initial_billing_interval: z.number().optional(),
-  next_billing_interval: z.number().optional(),
+  initial_billing_interval: z.number().nullable().optional(),
+  next_billing_interval: z.number().nullable().optional(),
   success: z.boolean(),
-  disconnect_code: z.number().optional(),
-  disconnect_reason: z.string().optional(),
-  source_ip: z.string().optional(),
-  source_port: z.number().optional(),
-  source_protocol: z.string().optional(),
-  trunk_name: z.string().optional(),
-  pop: z.string().optional(),
-  original_src_number: z.string().optional(),
+  disconnect_code: z.number().nullable().optional(),
+  disconnect_reason: z.string().nullable().optional(),
+  source_ip: z.string().nullable().optional(),
+  source_port: z.number().nullable().optional(),
+  source_protocol: z.string().nullable().optional(),
+  trunk_name: z.string().nullable().optional(),
+  pop: z.string().nullable().optional(),
+  original_src_number: z.string().nullable().optional(),
   src_number: z.string(),
   dst_number: z.string(),
-  call_type: z.string().optional(),
-  user_agent: z.string().optional(),
-  p_charge_info: z.string().optional(),
-  customer_vat: z.number().optional(),
+  call_type: z.string().nullable().optional(),
+  user_agent: z.string().nullable().optional(),
+  p_charge_info: z.string().nullable().optional(),
+  customer_vat: z.number().nullable().optional(),
 });
 
 type DidwwCdr = z.infer<typeof didwwCdrSchema>;
@@ -137,7 +137,8 @@ export class CdrController {
         if (!validation.success) {
           invalid++;
           logger.debug('Invalid CDR record', {
-            errors: validation.error.issues.map((i) => i.message).join(', '),
+            errors: validation.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', '),
+            rawRecord: JSON.stringify(flatRecord).slice(0, 500),
           });
           continue;
         }
