@@ -120,7 +120,19 @@ export class CdrController {
       let invalid = 0;
 
       for (const record of records) {
-        const validation = didwwCdrSchema.safeParse(record);
+        // DIDWW sends JSON:API format with attributes wrapper - unwrap if needed
+        let flatRecord = record;
+        if (
+          typeof record === 'object' &&
+          record !== null &&
+          'attributes' in record &&
+          typeof (record as Record<string, unknown>).attributes === 'object'
+        ) {
+          const { id, type, attributes } = record as { id?: string; type?: string; attributes: Record<string, unknown> };
+          flatRecord = { id, type, ...attributes };
+        }
+
+        const validation = didwwCdrSchema.safeParse(flatRecord);
 
         if (!validation.success) {
           invalid++;
