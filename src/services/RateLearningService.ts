@@ -7,6 +7,7 @@
 
 import { CdrRepository } from '../repositories/CdrRepository.js';
 import { CarrierRatesRepository } from '../repositories/CarrierRatesRepository.js';
+import { dbManager } from '../database/connection.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -26,6 +27,7 @@ export class RateLearningService {
 
   /**
    * Run a single learning cycle
+   * Uses transaction to ensure atomicity of rate updates and CDR marking
    */
   runLearningCycle(): { processed: number; updated: number } {
     const cdrs = this.cdrRepo.findUnprocessedForRates(this.batchSize);
@@ -37,27 +39,35 @@ export class RateLearningService {
     let updated = 0;
     const processedIds: string[] = [];
 
-    for (const cdr of cdrs) {
-      // Only learn from successful calls with valid pricing
-      if (cdr.success && cdr.price > 0 && cdr.billing_duration > 0) {
-        // Convert price to 1/10000 dollars (rate per minute for voice)
-        const ratePerMinute = (cdr.price / cdr.billing_duration) * 60;
-        const rateUnits = Math.round(ratePerMinute * 10000);
+    // Wrap entire learning cycle in a transaction to prevent:
+    // 1. Partial rate updates if markAsProcessed fails
+    // 2. Race conditions between concurrent learning cycles
+    const db = dbManager.getDb();
+    const runInTransaction = db.transaction(() => {
+      for (const cdr of cdrs) {
+        // Only learn from successful calls with valid pricing
+        if (cdr.success && cdr.price > 0 && cdr.billing_duration > 0) {
+          // Convert price to 1/10000 dollars (rate per minute for voice)
+          const ratePerMinute = (cdr.price / cdr.billing_duration) * 60;
+          const rateUnits = Math.round(ratePerMinute * 10000);
 
-        this.ratesRepo.upsertRate({
-          channel: 'voice',
-          dstPrefix: cdr.dst_prefix,
-          srcPrefix: cdr.src_prefix,
-          rateUnits,
-          billingIncrement: cdr.next_billing_interval || cdr.initial_billing_interval || 60,
-        });
-        updated++;
+          this.ratesRepo.upsertRate({
+            channel: 'voice',
+            dstPrefix: cdr.dst_prefix,
+            srcPrefix: cdr.src_prefix,
+            rateUnits,
+            billingIncrement: cdr.next_billing_interval || cdr.initial_billing_interval || 60,
+          });
+          updated++;
+        }
+        processedIds.push(cdr.id);
       }
-      processedIds.push(cdr.id);
-    }
 
-    // Mark all as processed
-    this.cdrRepo.markAsProcessed(processedIds);
+      // Mark all as processed within same transaction
+      this.cdrRepo.markAsProcessed(processedIds);
+    });
+
+    runInTransaction();
 
     logger.info('Rate learning cycle complete', { processed: cdrs.length, updated });
     return { processed: cdrs.length, updated };

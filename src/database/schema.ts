@@ -323,6 +323,7 @@ CREATE TABLE IF NOT EXISTS fraud_savings (
 
 CREATE INDEX IF NOT EXISTS idx_fraud_savings_created_at ON fraud_savings(created_at);
 CREATE INDEX IF NOT EXISTS idx_fraud_savings_request_id ON fraud_savings(request_id);
+CREATE INDEX IF NOT EXISTS idx_fraud_savings_channel_created ON fraud_savings(channel, created_at);
 `;
 
 /**
@@ -336,6 +337,22 @@ ALTER TABLE otp_requests ADD COLUMN voice_duration_seconds INTEGER;
 -- Phone metadata from libphonenumber
 ALTER TABLE otp_requests ADD COLUMN phone_number_type TEXT;
 ALTER TABLE otp_requests ADD COLUMN phone_carrier TEXT;
+ALTER TABLE otp_requests ADD COLUMN phone_geocoding TEXT;
+ALTER TABLE otp_requests ADD COLUMN phone_timezone TEXT;
+`;
+
+/**
+ * V8 Migration Part 3: Add phone metadata columns to cdr_records
+ */
+const V8_CDR_ALTER_SQL = `
+-- Destination phone metadata
+ALTER TABLE cdr_records ADD COLUMN dst_carrier TEXT;
+ALTER TABLE cdr_records ADD COLUMN dst_geocoding TEXT;
+ALTER TABLE cdr_records ADD COLUMN dst_timezone TEXT;
+
+-- Source phone metadata
+ALTER TABLE cdr_records ADD COLUMN src_carrier TEXT;
+ALTER TABLE cdr_records ADD COLUMN src_geocoding TEXT;
 `;
 
 /**
@@ -468,6 +485,18 @@ export function runMigrations(): void {
     // Add columns to otp_requests (run each ALTER separately for better error handling)
     const alterStatements = V8_ALTER_SQL.split(';').filter((s) => s.trim());
     for (const stmt of alterStatements) {
+      try {
+        db.exec(stmt);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.includes('duplicate column')) {
+          throw err;
+        }
+      }
+    }
+    // Add phone metadata columns to cdr_records
+    const cdrAlterStatements = V8_CDR_ALTER_SQL.split(';').filter((s) => s.trim());
+    for (const stmt of cdrAlterStatements) {
       try {
         db.exec(stmt);
       } catch (err) {

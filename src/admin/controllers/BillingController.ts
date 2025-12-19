@@ -9,6 +9,9 @@ import { CarrierRatesRepository } from '../../repositories/CarrierRatesRepositor
 import { FraudSavingsRepository } from '../../repositories/FraudSavingsRepository.js';
 import { CdrRepository } from '../../repositories/CdrRepository.js';
 
+// Maximum allowed limit for pagination to prevent memory exhaustion
+const MAX_LIMIT = 1000;
+
 /**
  * Billing Controller
  */
@@ -31,13 +34,17 @@ export class BillingController {
     try {
       const { channel, prefix, limit = '100', offset = '0' } = req.query;
 
+      // Clamp limit to prevent memory exhaustion
+      const parsedLimit = Math.min(parseInt(limit as string, 10) || 100, MAX_LIMIT);
+      const parsedOffset = Math.max(parseInt(offset as string, 10) || 0, 0);
+
       const rates = this.ratesRepo.findAll(
         {
           channel: channel as string | undefined,
           prefix: prefix as string | undefined,
         },
-        parseInt(limit as string, 10),
-        parseInt(offset as string, 10)
+        parsedLimit,
+        parsedOffset
       );
 
       // Format rates for display
@@ -126,19 +133,31 @@ export class BillingController {
    */
   getRecentSavings(req: Request, res: Response): void {
     try {
-      const limit = parseInt((req.query.limit as string) || '50', 10);
+      // Clamp limit to prevent memory exhaustion
+      const limit = Math.min(parseInt((req.query.limit as string) || '50', 10), MAX_LIMIT);
       const recentSavings = this.savingsRepo.getRecent(limit);
 
-      const formatted = recentSavings.map((saving) => ({
-        id: saving.id,
-        request_id: saving.request_id,
-        channel: saving.channel,
-        estimated_cost_usd: (saving.estimated_cost_units / 10000).toFixed(4),
-        dst_prefix: saving.dst_prefix,
-        fraud_score: saving.fraud_score,
-        fraud_reasons: saving.fraud_reasons ? JSON.parse(saving.fraud_reasons) : [],
-        created_at: new Date(saving.created_at).toISOString(),
-      }));
+      const formatted = recentSavings.map((saving) => {
+        let fraudReasons: string[] = [];
+        if (saving.fraud_reasons) {
+          try {
+            fraudReasons = JSON.parse(saving.fraud_reasons);
+          } catch {
+            // Malformed JSON in database, return empty array
+            fraudReasons = [];
+          }
+        }
+        return {
+          id: saving.id,
+          request_id: saving.request_id,
+          channel: saving.channel,
+          estimated_cost_usd: (saving.estimated_cost_units / 10000).toFixed(4),
+          dst_prefix: saving.dst_prefix,
+          fraud_score: saving.fraud_score,
+          fraud_reasons: fraudReasons,
+          created_at: new Date(saving.created_at).toISOString(),
+        };
+      });
 
       res.json({
         savings: formatted,
@@ -158,7 +177,8 @@ export class BillingController {
    */
   getCdrs(req: Request, res: Response): void {
     try {
-      const limit = parseInt((req.query.limit as string) || '50', 10);
+      // Clamp limit to prevent memory exhaustion
+      const limit = Math.min(parseInt((req.query.limit as string) || '50', 10), MAX_LIMIT);
       const recentCdrs = this.cdrRepo.findRecent(limit);
 
       const formatted = recentCdrs.map((cdr) => ({

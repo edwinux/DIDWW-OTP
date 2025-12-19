@@ -38,6 +38,12 @@ export interface CdrRecord {
   call_type: string | null;
   ingested_at: number;
   processed_for_rates: number;
+  // V8: Phone metadata from libphonenumber
+  dst_carrier: string | null;
+  dst_geocoding: string | null;
+  dst_timezone: string | null;
+  src_carrier: string | null;
+  src_geocoding: string | null;
 }
 
 /**
@@ -65,6 +71,12 @@ export interface CreateCdrInput {
   src_number: string;
   dst_number: string;
   call_type?: string;
+  // V8: Phone metadata from libphonenumber
+  dst_carrier?: string;
+  dst_geocoding?: string;
+  dst_timezone?: string;
+  src_carrier?: string;
+  src_geocoding?: string;
 }
 
 /**
@@ -74,15 +86,38 @@ export class CdrRepository {
   private phoneService = getPhoneNumberService();
 
   /**
+   * Safely extract prefix with fallback validation
+   * Returns null if number is too short or malformed
+   */
+  private safeExtractPrefix(number: string, length: number): string | null {
+    // Try phone service first
+    const prefix = this.phoneService.extractPrefix(number, length);
+    if (prefix) return prefix;
+
+    // Fallback: extract digits only and validate minimum length
+    const digits = number.replace(/\D/g, '');
+    if (digits.length < 2) {
+      // Too short to be a valid prefix
+      return null;
+    }
+    return digits.slice(0, Math.min(length, digits.length));
+  }
+
+  /**
    * Create a single CDR record
    */
   create(input: CreateCdrInput): void {
     const db = dbManager.getDb();
     const now = Date.now();
 
-    // Extract prefixes for rate learning
-    const dstPrefix = this.phoneService.extractPrefix(input.dst_number, 4) || input.dst_number.slice(0, 4);
-    const srcPrefix = input.src_number ? this.phoneService.extractPrefix(input.src_number, 4) : null;
+    // Extract prefixes for rate learning with validation
+    const dstPrefix = this.safeExtractPrefix(input.dst_number, 4);
+    const srcPrefix = input.src_number ? this.safeExtractPrefix(input.src_number, 4) : null;
+
+    if (!dstPrefix) {
+      logger.warn('CDR skipped due to invalid dst_number', { id: input.id, dst_number: input.dst_number });
+      return;
+    }
 
     const stmt = db.prepare(`
       INSERT INTO cdr_records (
@@ -94,6 +129,8 @@ export class CdrRepository {
         success, disconnect_code, disconnect_reason,
         source_ip, trunk_name, pop,
         src_number, dst_number, dst_prefix, src_prefix, call_type,
+        dst_carrier, dst_geocoding, dst_timezone,
+        src_carrier, src_geocoding,
         ingested_at, processed_for_rates
       ) VALUES (
         ?, ?, ?,
@@ -104,6 +141,8 @@ export class CdrRepository {
         ?, ?, ?,
         ?, ?, ?,
         ?, ?, ?, ?, ?,
+        ?, ?, ?,
+        ?, ?,
         ?, 0
       )
     `);
@@ -132,6 +171,11 @@ export class CdrRepository {
       dstPrefix,
       srcPrefix,
       input.call_type ?? null,
+      input.dst_carrier ?? null,
+      input.dst_geocoding ?? null,
+      input.dst_timezone ?? null,
+      input.src_carrier ?? null,
+      input.src_geocoding ?? null,
       now
     );
   }
@@ -155,6 +199,8 @@ export class CdrRepository {
         success, disconnect_code, disconnect_reason,
         source_ip, trunk_name, pop,
         src_number, dst_number, dst_prefix, src_prefix, call_type,
+        dst_carrier, dst_geocoding, dst_timezone,
+        src_carrier, src_geocoding,
         ingested_at, processed_for_rates
       ) VALUES (
         ?, ?, ?,
@@ -165,17 +211,27 @@ export class CdrRepository {
         ?, ?, ?,
         ?, ?, ?,
         ?, ?, ?, ?, ?,
+        ?, ?, ?,
+        ?, ?,
         ?, 0
       )
     `);
 
     let inserted = 0;
+    let skipped = 0;
+    let duplicates = 0;
 
     const insertMany = db.transaction((records: CreateCdrInput[]) => {
       for (const input of records) {
-        // Extract prefixes for rate learning
-        const dstPrefix = this.phoneService.extractPrefix(input.dst_number, 4) || input.dst_number.slice(0, 4);
-        const srcPrefix = input.src_number ? this.phoneService.extractPrefix(input.src_number, 4) : null;
+        // Extract prefixes for rate learning with validation
+        const dstPrefix = this.safeExtractPrefix(input.dst_number, 4);
+        const srcPrefix = input.src_number ? this.safeExtractPrefix(input.src_number, 4) : null;
+
+        // Skip records with invalid destination numbers
+        if (!dstPrefix) {
+          skipped++;
+          continue;
+        }
 
         const result = stmt.run(
           input.id,
@@ -201,16 +257,34 @@ export class CdrRepository {
           dstPrefix,
           srcPrefix,
           input.call_type ?? null,
+          input.dst_carrier ?? null,
+          input.dst_geocoding ?? null,
+          input.dst_timezone ?? null,
+          input.src_carrier ?? null,
+          input.src_geocoding ?? null,
           now
         );
 
         if (result.changes > 0) {
           inserted++;
+        } else {
+          duplicates++;
         }
       }
     });
 
     insertMany(inputs);
+
+    // Log if there were skipped or duplicate records (Warning #5)
+    if (skipped > 0 || duplicates > 0) {
+      logger.warn('CDR bulk insert had skipped/duplicate records', {
+        total: inputs.length,
+        inserted,
+        skipped,
+        duplicates,
+      });
+    }
+
     return inserted;
   }
 
