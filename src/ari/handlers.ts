@@ -12,10 +12,6 @@ import { generateOtpTts } from '../utils/tts.js';
 import { emitOtpEvent } from '../services/OtpEventService.js';
 import { getCallTracker, type CallState } from '../services/CallTrackerService.js';
 
-// Duration threshold (ms) to consider OTP as played even if playback didn't complete
-// Pre-recorded sequence is ~15s, so 12s is a reasonable threshold
-const OTP_PLAYED_DURATION_THRESHOLD_MS = 12000;
-
 /**
  * Register Stasis event handlers on the ARI client
  */
@@ -51,21 +47,17 @@ export function registerStasisHandlers(client: AriClient): void {
       // Check if this is a "Channel not found" error (user hung up)
       if (msg.includes('Channel not found') || msg.includes('not found')) {
         // User hung up - end call and emit hangup event
+        // If we're in StasisStart, the call was answered, so OTP is considered delivered
         const result = tracker.endCall(callId);
-        // Duration-based fallback: if talk time exceeds threshold, consider OTP played
-        const talkDurationMs = result?.durations.talkDurationMs ?? 0;
-        const otpPlayed = (result?.state.otpPlayed ?? false) || talkDurationMs >= OTP_PLAYED_DURATION_THRESHOLD_MS;
 
         emitOtpEvent(callId, 'voice', 'hangup', {
           hung_up_by: 'user',
-          otp_played: otpPlayed,
+          otp_played: true, // Answered call = delivered
           ring_duration_ms: result?.durations.ringDurationMs,
           talk_duration_ms: result?.durations.talkDurationMs,
         });
-        logger.info('User hung up', {
+        logger.info('User hung up (answered call = delivered)', {
           callId,
-          otpPlayed,
-          otpPlayedByDuration: !(result?.state.otpPlayed) && otpPlayed,
           talkDurationMs: result?.durations.talkDurationMs,
         });
       } else {
@@ -90,22 +82,17 @@ export function registerStasisHandlers(client: AriClient): void {
 
     if (callState && !callState.systemHangup) {
       // User hung up before system did - end call and get durations
+      // If we're in StasisEnd, the call was answered, so OTP is considered delivered
       const result = tracker.endCall(requestId);
       if (result) {
-        // Duration-based fallback: if talk time exceeds threshold, consider OTP played
-        const talkDurationMs = result.durations.talkDurationMs ?? 0;
-        const otpPlayed = result.state.otpPlayed || talkDurationMs >= OTP_PLAYED_DURATION_THRESHOLD_MS;
-
         emitOtpEvent(requestId, 'voice', 'hangup', {
           hung_up_by: 'user',
-          otp_played: otpPlayed,
+          otp_played: true, // Answered call = delivered
           ring_duration_ms: result.durations.ringDurationMs,
           talk_duration_ms: result.durations.talkDurationMs,
         });
-        logger.info('User hung up (StasisEnd)', {
+        logger.info('User hung up (StasisEnd, answered = delivered)', {
           requestId,
-          otpPlayed,
-          otpPlayedByDuration: !result.state.otpPlayed && otpPlayed,
           talkDurationMs: result.durations.talkDurationMs,
         });
       }
