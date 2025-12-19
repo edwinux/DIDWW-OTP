@@ -25,6 +25,7 @@ const dispatchSchema = z.object({
     .default(['sms', 'voice']),
   webhook_url: z.string().url().optional(),
   ip: z.string().ip().optional(),
+  max_cost_usd: z.number().positive().max(100000000).optional(), // Maximum cost in USD (max $100M to prevent overflow)
 });
 
 /**
@@ -54,7 +55,7 @@ export class DispatchController {
       return;
     }
 
-    const { phone, code, session_id, channels, webhook_url, ip: bodyIp } = validation.data;
+    const { phone, code, session_id, channels, webhook_url, ip: bodyIp, max_cost_usd } = validation.data;
 
     // Extract client IP - prefer explicit body IP over header/socket
     const headerIp = extractClientIp(
@@ -66,6 +67,9 @@ export class DispatchController {
     // Normalize phone to E.164
     const e164Phone = phone.startsWith('+') ? phone : `+${phone}`;
 
+    // Convert max cost from USD to storage units (1/10000 dollars)
+    const maxCostUnits = max_cost_usd ? Math.round(max_cost_usd * 10000) : undefined;
+
     try {
       const result = await this.dispatchService.dispatch({
         phone: e164Phone,
@@ -74,6 +78,7 @@ export class DispatchController {
         channels: channels as ('sms' | 'voice')[],
         webhookUrl: webhook_url,
         ip: clientIp,
+        maxCostUnits,
       });
 
       // Always return 200 OK (even for shadow-banned requests)

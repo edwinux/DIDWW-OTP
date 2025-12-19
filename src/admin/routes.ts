@@ -13,6 +13,7 @@ import { DatabaseController } from './controllers/DatabaseController.js';
 import { TesterController } from './controllers/TesterController.js';
 import { CallerIdRoutingController } from './controllers/CallerIdRoutingController.js';
 import { WhitelistController } from './controllers/WhitelistController.js';
+import { BillingController } from './controllers/BillingController.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -26,6 +27,7 @@ export function registerAdminRoutes(app: Express, dispatchService: DispatchServi
   const testerController = new TesterController(dispatchService);
   const callerIdRoutingController = new CallerIdRoutingController();
   const whitelistController = new WhitelistController();
+  const billingController = new BillingController();
 
   // ============================================================================
   // Authentication Routes (IP whitelist only, no session required)
@@ -165,6 +167,30 @@ export function registerAdminRoutes(app: Express, dispatchService: DispatchServi
 
   app.delete('/admin/whitelist/:id', requireAdminAuth, (req: Request, res: Response) => {
     whitelistController.deleteEntry(req, res);
+  });
+
+  // ============================================================================
+  // Billing Routes (Rates & Fraud Savings)
+  // ============================================================================
+
+  app.get('/admin/billing/rates', requireAdminAuth, (req: Request, res: Response) => {
+    billingController.getRates(req, res);
+  });
+
+  app.get('/admin/billing/rates/stats', requireAdminAuth, (req: Request, res: Response) => {
+    billingController.getRateStats(req, res);
+  });
+
+  app.get('/admin/billing/savings', requireAdminAuth, (req: Request, res: Response) => {
+    billingController.getSavings(req, res);
+  });
+
+  app.get('/admin/billing/savings/recent', requireAdminAuth, (req: Request, res: Response) => {
+    billingController.getRecentSavings(req, res);
+  });
+
+  app.get('/admin/billing/cdrs', requireAdminAuth, (req: Request, res: Response) => {
+    billingController.getCdrs(req, res);
   });
 
   // ============================================================================

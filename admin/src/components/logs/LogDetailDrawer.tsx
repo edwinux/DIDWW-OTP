@@ -1,4 +1,4 @@
-import { X, Phone, MessageSquare, Shield, ShieldOff, Clock, MapPin, Globe, CheckCircle, XCircle } from 'lucide-react';
+import { X, Phone, MessageSquare, Shield, ShieldOff, Clock, MapPin, Globe, CheckCircle, XCircle, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -119,6 +119,47 @@ export function LogDetailDrawer({ log, onClose }: LogDetailDrawerProps) {
                   </div>
                 </div>
               </div>
+
+              {/* Phone Metadata (V8) */}
+              {(log.phone_number_type || log.phone_carrier || log.phone_geocoding || log.phone_timezone) && (
+                <>
+                  <Separator />
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-medium flex items-center gap-2">
+                      <Building2 className="h-4 w-4 text-muted-foreground" />
+                      Phone Metadata
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      {log.phone_number_type && (
+                        <div>
+                          <p className="text-muted-foreground">Number Type</p>
+                          <Badge variant="outline" className="mt-1 capitalize">
+                            {log.phone_number_type.toLowerCase().replace('_', ' ')}
+                          </Badge>
+                        </div>
+                      )}
+                      {log.phone_carrier && (
+                        <div>
+                          <p className="text-muted-foreground">Carrier</p>
+                          <p className="font-medium">{log.phone_carrier}</p>
+                        </div>
+                      )}
+                      {log.phone_geocoding && (
+                        <div>
+                          <p className="text-muted-foreground">Location</p>
+                          <p className="font-medium">{log.phone_geocoding}</p>
+                        </div>
+                      )}
+                      {log.phone_timezone && (
+                        <div>
+                          <p className="text-muted-foreground">Timezone</p>
+                          <p className="font-mono text-xs">{log.phone_timezone}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
 
               <Separator />
 

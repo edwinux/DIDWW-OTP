@@ -7,6 +7,7 @@
 import type { Express, Request, Response, NextFunction } from 'express';
 import { DispatchController } from '../controllers/DispatchController.js';
 import { WebhookController } from '../controllers/WebhookController.js';
+import { CdrController } from '../controllers/CdrController.js';
 import type { DispatchService } from '../services/DispatchService.js';
 import { isDbConnected } from '../database/index.js';
 import { isAriConnected } from '../ari/client.js';
@@ -37,7 +38,11 @@ function authMiddleware(req: Request, res: Response, next: NextFunction): void {
 /**
  * Register all routes
  */
-export function registerRoutes(app: Express, dispatchService: DispatchService): void {
+export function registerRoutes(
+  app: Express,
+  dispatchService: DispatchService,
+  cdrController?: CdrController
+): void {
   const dispatchController = new DispatchController(dispatchService);
   const webhookController = new WebhookController(dispatchService);
 
@@ -81,6 +86,15 @@ export function registerRoutes(app: Express, dispatchService: DispatchService): 
     // DLR callbacks come from DIDWW, no auth required
     webhookController.handleDlrCallback(req, res);
   });
+
+  // CDR streaming webhook (if CDR controller is provided)
+  if (cdrController) {
+    app.post('/webhooks/cdr', (req: Request, res: Response) => {
+      // CDR callbacks come from DIDWW, no auth required
+      cdrController.handleCdrBatch(req, res);
+    });
+    logger.info('CDR webhook endpoint registered');
+  }
 
   // 404 handler
   app.use((_req: Request, res: Response) => {
