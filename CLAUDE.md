@@ -226,9 +226,20 @@ GitHub Actions builds Docker image on every push to main, tags with commit SHA, 
 
 ### Production Environment
 - URL: https://otp-gw.pro.makeup
+- Server: `root@95.179.166.168` (SSH access)
 - SSL/HTTPS: nginx reverse proxy with Cloudflare Origin Certificate
 - Deployment: Automatic on push to main branch
 - Registry: GitHub Container Registry (ghcr.io)
+
+### Production Server Data Locations
+- **Database (IMPORTANT)**: `/opt/didww-otp/data/otp.db` - Contains all production data including caller_id_routes, OTP requests, fraud rules, etc.
+- **Application code**: `/root/DIDWW-OTP/` - Git repo clone
+- **Docker compose**: `/root/DIDWW-OTP/docker-compose-temp.yml` - Working compose file
+- **Environment config**: `/root/DIDWW-OTP/.env` - Production secrets
+- **Nginx config**: `/etc/nginx/sites-enabled/` - Reverse proxy (admin on 8081, API on 8080)
+- **Sound files**: `/root/DIDWW-OTP/sounds/converted/` - Pre-recorded OTP sounds
+
+**Critical**: When redeploying, ensure data volume mount points to `/opt/didww-otp/data` NOT `/root/DIDWW-OTP/data` to preserve production data.
 
 See docs/DEPLOYMENT.md for detailed deployment instructions.
 

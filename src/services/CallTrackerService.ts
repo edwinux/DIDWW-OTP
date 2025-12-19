@@ -58,6 +58,8 @@ class CallTrackerService {
   private uniqueIdToRequest = new Map<string, string>();
   // Actual AMI channel names (PJSIP/didww-xxx) to request mapping
   private amiChannelToRequest = new Map<string, string>();
+  // ARI channel ID to request mapping (for StasisEnd correlation)
+  private ariChannelIdToRequest = new Map<string, string>();
 
   /**
    * Register a new call when origination starts
@@ -124,8 +126,17 @@ class CallTrackerService {
     }
 
     state.channelId = channelId;
+    // Also store reverse lookup for StasisEnd correlation
+    this.ariChannelIdToRequest.set(channelId, requestId);
 
     logger.debug('CallTracker: Set channel ID', { requestId, channelId });
+  }
+
+  /**
+   * Find request ID by ARI channel ID (for StasisEnd correlation)
+   */
+  findRequestByAriChannelId(channelId: string): string | undefined {
+    return this.ariChannelIdToRequest.get(channelId);
   }
 
   /**
@@ -343,6 +354,11 @@ class CallTrackerService {
     // Clean up unique ID if set
     if (state.uniqueId) {
       this.uniqueIdToRequest.delete(state.uniqueId);
+    }
+
+    // Clean up ARI channel ID mapping
+    if (state.channelId) {
+      this.ariChannelIdToRequest.delete(state.channelId);
     }
 
     // Clean up AMI channel mapping
