@@ -128,7 +128,7 @@ export default function DashboardPage() {
       <div className="grid gap-4 md:grid-cols-2">
         <ChannelStats
           channel="voice"
-          stats={stats?.voice ?? { total: 0, avgDuration: null, successRate: 0, authSuccessRate: 0, avgCost: null }}
+          stats={stats?.voice ?? { total: 0, avgDuration: null, successRate: 0, authSuccessRate: 0, avgCost: null, totalCost: null }}
         />
         <ChannelStats
           channel="sms"

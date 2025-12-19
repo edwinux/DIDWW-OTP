@@ -83,19 +83,15 @@ export function ChannelStats({ channel, stats }: ChannelStatsProps) {
             </div>
           )}
 
-          {/* Voice: Avg Cost (placeholder), SMS: Total Cost */}
+          {/* Total Cost for both channels */}
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <DollarSign className="h-3.5 w-3.5" />
-              {isVoice ? 'Avg Cost' : 'Total Cost'}
+              Total Cost
             </div>
-            {isVoice ? (
-              <p className="text-2xl font-bold text-muted-foreground">Soon</p>
-            ) : (
-              <p className={`text-2xl font-bold ${smsStats.totalCost === null ? 'text-muted-foreground' : ''}`}>
-                {formatCost(smsStats.totalCost, 3)}
-              </p>
-            )}
+            <p className={`text-2xl font-bold ${(isVoice ? voiceStats.totalCost : smsStats.totalCost) === null ? 'text-muted-foreground' : ''}`}>
+              {formatCost(isVoice ? voiceStats.totalCost : smsStats.totalCost, 3)}
+            </p>
           </div>
         </div>
       </CardContent>
