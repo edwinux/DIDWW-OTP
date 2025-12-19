@@ -153,6 +153,12 @@ export class CdrController {
         // Filter by target trunk if specified
         if (this.targetTrunkId && trunkId !== this.targetTrunkId) {
           filtered++;
+          logger.debug('CDR filtered by trunk ID', {
+            cdrId: cdr.id,
+            trunkName: cdr.trunk_name,
+            extractedTrunkId: trunkId,
+            targetTrunkId: this.targetTrunkId,
+          });
           continue;
         }
 
