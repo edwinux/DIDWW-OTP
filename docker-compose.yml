@@ -36,13 +36,15 @@ services:
       # Channels
       - CHANNELS_DEFAULT=${CHANNELS_DEFAULT:-sms,voice}
       - CHANNELS_ENABLE_FAILOVER=${CHANNELS_ENABLE_FAILOVER:-true}
+      # Voice - use pre-recorded sounds instead of TTS
+      - VOICE_USE_PRERECORDED_SOUNDS=${VOICE_USE_PRERECORDED_SOUNDS:-false}
     env_file:
       - .env
     volumes:
       # Persistent database storage
       - ./data:/data
-      # Optional: Mount custom sound files
-      # - ./sounds:/var/lib/asterisk/sounds/custom:ro
+      # Pre-recorded sound files for OTP playback
+      - ./sounds/converted:/var/lib/asterisk/sounds/custom:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]

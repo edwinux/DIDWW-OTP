@@ -51,6 +51,7 @@ const configSchema = z.object({
       .default('Your verification code is {code}. Repeating. {code}.'),
     speed: voiceSpeedSchema,
     digitPauseMs: z.coerce.number().int().min(0).max(5000).default(500),
+    usePrerecordedSounds: z.coerce.boolean().default(false), // Use pre-recorded sounds instead of TTS
   }),
 
   // Optional - SIP/RTP Ports
@@ -184,6 +185,7 @@ function parseEnvVars(): Record<string, unknown> {
       messageTemplate: process.env.OTP_MESSAGE_TEMPLATE,
       speed: process.env.OTP_VOICE_SPEED,
       digitPauseMs: process.env.OTP_DIGIT_PAUSE_MS,
+      usePrerecordedSounds: process.env.VOICE_USE_PRERECORDED_SOUNDS,
     },
     sip: {
       port: process.env.SIP_PORT,
