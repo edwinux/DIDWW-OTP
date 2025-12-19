@@ -144,6 +144,14 @@ const configSchema = z.object({
     cdnUrl: z.string().default('https://cdn.jsdelivr.net/npm/@ip-location-db/asn-mmdb/asn.mmdb'),
     shadowBanUnresolved: z.coerce.boolean().default(true), // Shadow-ban if ASN unresolved after update
   }),
+
+  // CDR streaming configuration for billing/rating
+  cdr: z.object({
+    enabled: z.coerce.boolean().default(false),
+    targetTrunkId: z.string().optional(), // Filter CDRs by trunk ID
+    learningIntervalMinutes: z.coerce.number().int().min(1).max(1440).default(60), // Hourly rate learning
+    learningBatchSize: z.coerce.number().int().min(10).max(10000).default(1000),
+  }),
 });
 
 /**
@@ -240,6 +248,12 @@ function parseEnvVars(): Record<string, unknown> {
       unresolvedThreshold: process.env.ASN_UNRESOLVED_THRESHOLD,
       cdnUrl: process.env.ASN_CDN_URL,
       shadowBanUnresolved: process.env.ASN_SHADOW_BAN_UNRESOLVED,
+    },
+    cdr: {
+      enabled: process.env.CDR_ENABLED,
+      targetTrunkId: process.env.CDR_TARGET_TRUNK_ID,
+      learningIntervalMinutes: process.env.CDR_LEARNING_INTERVAL_MINUTES,
+      learningBatchSize: process.env.CDR_LEARNING_BATCH_SIZE,
     },
   };
 }
