@@ -7,6 +7,7 @@
 
 import { CarrierRatesRepository } from '../repositories/CarrierRatesRepository.js';
 import { getPhoneNumberService } from './PhoneNumberService.js';
+import { getConfig } from '../config/index.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -21,6 +22,14 @@ export interface CostPrediction {
 }
 
 /**
+ * Cost prediction service options
+ */
+export interface CostPredictionOptions {
+  defaultSmsRateUnits?: number;
+  defaultVoiceRateUnits?: number;
+}
+
+/**
  * Cost Prediction Service
  */
 export class CostPredictionService {
@@ -28,11 +37,14 @@ export class CostPredictionService {
   private phoneService = getPhoneNumberService();
 
   // Default rates when no learned data (in 1/10000 dollars)
-  private readonly DEFAULT_SMS_RATE = 100; // $0.01 per SMS
-  private readonly DEFAULT_VOICE_RATE = 200; // $0.02 per minute
+  // Configurable via CDR_DEFAULT_SMS_RATE_UNITS and CDR_DEFAULT_VOICE_RATE_UNITS
+  private readonly defaultSmsRate: number;
+  private readonly defaultVoiceRate: number;
 
-  constructor(ratesRepo: CarrierRatesRepository) {
+  constructor(ratesRepo: CarrierRatesRepository, options?: CostPredictionOptions) {
     this.ratesRepo = ratesRepo;
+    this.defaultSmsRate = options?.defaultSmsRateUnits ?? 100; // $0.01 per SMS
+    this.defaultVoiceRate = options?.defaultVoiceRateUnits ?? 200; // $0.02 per minute
   }
 
   /**
@@ -43,8 +55,8 @@ export class CostPredictionService {
     const rate = this.ratesRepo.findBestMatchingRate(channel, dstPhone, srcPrefix);
 
     if (!rate) {
-      // No learned rate, use default
-      const defaultRate = channel === 'sms' ? this.DEFAULT_SMS_RATE : this.DEFAULT_VOICE_RATE;
+      // No learned rate, use configurable default
+      const defaultRate = channel === 'sms' ? this.defaultSmsRate : this.defaultVoiceRate;
       return {
         estimatedCostUnits: defaultRate,
         estimatedCostUsd: defaultRate / 10000,
@@ -114,12 +126,19 @@ let instance: CostPredictionService | null = null;
 
 export function getCostPredictionService(): CostPredictionService {
   if (!instance) {
-    instance = new CostPredictionService(new CarrierRatesRepository());
+    const config = getConfig();
+    instance = new CostPredictionService(new CarrierRatesRepository(), {
+      defaultSmsRateUnits: config.cdr.defaultSmsRateUnits,
+      defaultVoiceRateUnits: config.cdr.defaultVoiceRateUnits,
+    });
   }
   return instance;
 }
 
-export function initCostPredictionService(ratesRepo: CarrierRatesRepository): CostPredictionService {
-  instance = new CostPredictionService(ratesRepo);
+export function initCostPredictionService(
+  ratesRepo: CarrierRatesRepository,
+  options?: CostPredictionOptions
+): CostPredictionService {
+  instance = new CostPredictionService(ratesRepo, options);
   return instance;
 }

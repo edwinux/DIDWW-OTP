@@ -12,6 +12,7 @@ import { WebhookService, type WebhookPayload } from './WebhookService.js';
 import { getShadowBanSimulator } from './ShadowBanSimulator.js';
 import { getStatusTracker } from './StatusTracker.js';
 import { getCostPredictionService } from './CostPredictionService.js';
+import { getPhoneNumberService } from './PhoneNumberService.js';
 import { OtpRequestRepository, type OtpStatus } from '../repositories/OtpRequestRepository.js';
 import { FraudRulesRepository } from '../repositories/FraudRulesRepository.js';
 import { FraudSavingsRepository } from '../repositories/FraudSavingsRepository.js';
@@ -112,6 +113,10 @@ export class DispatchService {
       sessionId: request.sessionId,
     });
 
+    // Step 1b: Get phone metadata (async - carrier, geocoding, timezone)
+    const phoneService = getPhoneNumberService();
+    const phoneMeta = await phoneService.parseExtended(request.phone).catch(() => null);
+
     // Step 2: Create request record
     const codeHash = this.hashCode(request.code);
     this.otpRepo.create({
@@ -131,6 +136,11 @@ export class DispatchService {
       shadow_banned: fraudResult.shadowBan,
       webhook_url: request.webhookUrl,
       expires_at: Date.now() + 10 * 60 * 1000, // 10 minute expiry
+      // V8: Phone metadata from libphonenumber
+      phone_number_type: phoneMeta?.numberType ?? undefined,
+      phone_carrier: phoneMeta?.carrier ?? undefined,
+      phone_geocoding: phoneMeta?.geocoding ?? undefined,
+      phone_timezone: phoneMeta?.timezones?.[0] ?? undefined,
     });
 
     // Step 3: Get cost prediction for fraud savings tracking

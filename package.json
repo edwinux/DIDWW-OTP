@@ -44,6 +44,7 @@
     "express": "^4.21.0",
     "express-session": "^1.18.2",
     "geoip-lite": "^1.4.10",
+    "libphonenumber-geo-carrier": "^1.2.13",
     "libphonenumber-js": "^1.12.31",
     "maxmind": "^5.0.1",
     "ws": "^8.18.3",

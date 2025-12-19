@@ -25,7 +25,7 @@ const dispatchSchema = z.object({
     .default(['sms', 'voice']),
   webhook_url: z.string().url().optional(),
   ip: z.string().ip().optional(),
-  max_cost_usd: z.number().positive().optional(), // Maximum cost in USD
+  max_cost_usd: z.number().positive().max(100000000).optional(), // Maximum cost in USD (max $100M to prevent overflow)
 });
 
 /**

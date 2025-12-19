@@ -8,6 +8,7 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { CdrRepository, type CreateCdrInput } from '../repositories/CdrRepository.js';
+import { getPhoneNumberService } from '../services/PhoneNumberService.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -114,7 +115,7 @@ export class CdrController {
       }
 
       // Filter and validate CDRs
-      const validCdrs: CreateCdrInput[] = [];
+      const pendingCdrs: { cdr: DidwwCdr; trunkId: string; timeStart: number; timeEnd: number }[] = [];
       let filtered = 0;
       let invalid = 0;
 
@@ -148,33 +149,65 @@ export class CdrController {
 
         if (!timeStart || !timeEnd) {
           invalid++;
-          logger.debug('CDR with invalid timestamps', { id: cdr.id });
+          logger.warn('CDR with invalid timestamps skipped', {
+            id: cdr.id,
+            time_start: cdr.time_start,
+            time_end: cdr.time_end,
+          });
           continue;
         }
 
-        validCdrs.push({
-          id: cdr.id,
-          call_id: cdr.call_id,
-          trunk_id: trunkId || 'unknown',
-          time_start: timeStart,
-          time_connect: parseTimestamp(cdr.time_connect) ?? undefined,
-          time_end: timeEnd,
-          duration: cdr.duration,
-          billing_duration: cdr.billing_duration,
-          initial_billing_interval: cdr.initial_billing_interval,
-          next_billing_interval: cdr.next_billing_interval,
-          rate: cdr.rate,
-          price: cdr.price,
-          success: cdr.success,
-          disconnect_code: cdr.disconnect_code,
-          disconnect_reason: cdr.disconnect_reason,
-          source_ip: cdr.source_ip,
-          trunk_name: cdr.trunk_name,
-          pop: cdr.pop,
-          src_number: cdr.src_number,
-          dst_number: cdr.dst_number,
-          call_type: cdr.call_type,
+        pendingCdrs.push({ cdr, trunkId: trunkId || 'unknown', timeStart, timeEnd });
+      }
+
+      // Lookup phone metadata in parallel (limited batch size to avoid overwhelming)
+      const phoneService = getPhoneNumberService();
+      const METADATA_BATCH_SIZE = 50;
+      const validCdrs: CreateCdrInput[] = [];
+
+      for (let i = 0; i < pendingCdrs.length; i += METADATA_BATCH_SIZE) {
+        const batch = pendingCdrs.slice(i, i + METADATA_BATCH_SIZE);
+
+        // Lookup metadata for all phones in batch in parallel
+        const metadataPromises = batch.map(async ({ cdr, trunkId, timeStart, timeEnd }) => {
+          // Lookup destination phone metadata
+          const dstMeta = await phoneService.parseExtended(cdr.dst_number).catch(() => null);
+          // Lookup source phone metadata (less important, may be our own number)
+          const srcMeta = await phoneService.parseExtended(cdr.src_number).catch(() => null);
+
+          return {
+            id: cdr.id,
+            call_id: cdr.call_id,
+            trunk_id: trunkId,
+            time_start: timeStart,
+            time_connect: parseTimestamp(cdr.time_connect) ?? undefined,
+            time_end: timeEnd,
+            duration: cdr.duration,
+            billing_duration: cdr.billing_duration,
+            initial_billing_interval: cdr.initial_billing_interval,
+            next_billing_interval: cdr.next_billing_interval,
+            rate: cdr.rate,
+            price: cdr.price,
+            success: cdr.success,
+            disconnect_code: cdr.disconnect_code,
+            disconnect_reason: cdr.disconnect_reason,
+            source_ip: cdr.source_ip,
+            trunk_name: cdr.trunk_name,
+            pop: cdr.pop,
+            src_number: cdr.src_number,
+            dst_number: cdr.dst_number,
+            call_type: cdr.call_type,
+            // V8: Phone metadata
+            dst_carrier: dstMeta?.carrier ?? undefined,
+            dst_geocoding: dstMeta?.geocoding ?? undefined,
+            dst_timezone: dstMeta?.timezones?.[0] ?? undefined,
+            src_carrier: srcMeta?.carrier ?? undefined,
+            src_geocoding: srcMeta?.geocoding ?? undefined,
+          } as CreateCdrInput;
         });
+
+        const batchResults = await Promise.all(metadataPromises);
+        validCdrs.push(...batchResults);
       }
 
       // Bulk insert valid CDRs

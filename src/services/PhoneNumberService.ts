@@ -3,19 +3,21 @@
  *
  * Wrapper around libphonenumber-js for phone number parsing and metadata.
  * Provides country, carrier, and number type detection.
- * Supports weekly metadata updates similar to AsnDatabase pattern.
+ * Uses the /max bundle for maximum metadata and libphonenumber-geo-carrier
+ * for carrier lookup, geocoding, and timezone information.
  */
 
 import {
   parsePhoneNumber,
   isValidPhoneNumber,
-  CountryCode,
-  PhoneNumber,
-} from 'libphonenumber-js';
+  type CountryCode,
+  type PhoneNumber,
+} from 'libphonenumber-js/max';
+import { carrier, geocoder, timezones } from 'libphonenumber-geo-carrier';
 import { logger } from '../utils/logger.js';
 
 /**
- * Phone number metadata result
+ * Phone number metadata result (synchronous)
  */
 export interface PhoneMetadata {
   /** ISO 3166-1 alpha-2 country code (e.g., 'US', 'GB') */
@@ -24,14 +26,24 @@ export interface PhoneMetadata {
   countryCallingCode: string | null;
   /** Number type: 'MOBILE', 'FIXED_LINE', 'VOIP', etc. */
   numberType: string | null;
-  /** Original carrier name (may not reflect current carrier due to portability) */
-  carrier: string | null;
   /** Whether the number is valid */
   isValid: boolean;
   /** National number without country code */
   nationalNumber: string | null;
   /** E.164 formatted number */
   e164: string | null;
+}
+
+/**
+ * Extended phone metadata with async lookups (carrier, geo, timezone)
+ */
+export interface PhoneMetadataExtended extends PhoneMetadata {
+  /** Original carrier name (may not reflect current carrier due to portability) */
+  carrier: string | null;
+  /** Geographic location description (e.g., 'San Francisco, CA') */
+  geocoding: string | null;
+  /** IANA timezone identifiers */
+  timezones: string[];
 }
 
 /**
@@ -91,7 +103,6 @@ class PhoneNumberService {
         country: parsed.country || null,
         countryCallingCode: parsed.countryCallingCode || null,
         numberType: this.getNumberType(parsed),
-        carrier: null, // libphonenumber-js doesn't include carrier data in default bundle
         isValid: parsed.isValid(),
         nationalNumber: parsed.nationalNumber || null,
         e164: parsed.number || null,
@@ -143,6 +154,93 @@ class PhoneNumberService {
       return type || null;
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Parse phone number with extended metadata (async)
+   * Includes carrier, geocoding, and timezone lookups
+   */
+  async parseExtended(phone: string, defaultCountry?: CountryCode): Promise<PhoneMetadataExtended> {
+    const basic = this.parse(phone, defaultCountry);
+    const normalizedPhone = phone.startsWith('+') ? phone : `+${phone}`;
+
+    if (!basic.isValid) {
+      return {
+        ...basic,
+        carrier: null,
+        geocoding: null,
+        timezones: [],
+      };
+    }
+
+    try {
+      const parsed = parsePhoneNumber(normalizedPhone, defaultCountry);
+      if (!parsed) {
+        return { ...basic, carrier: null, geocoding: null, timezones: [] };
+      }
+
+      // Perform async lookups in parallel
+      const [carrierResult, geoResult, tzResult] = await Promise.all([
+        carrier(parsed).catch(() => null),
+        geocoder(parsed).catch(() => null),
+        timezones(parsed).catch(() => []),
+      ]);
+
+      return {
+        ...basic,
+        carrier: carrierResult,
+        geocoding: geoResult,
+        timezones: tzResult || [],
+      };
+    } catch (error) {
+      logger.debug('Extended phone parsing failed', {
+        phone: normalizedPhone.slice(0, 6) + '***',
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { ...basic, carrier: null, geocoding: null, timezones: [] };
+    }
+  }
+
+  /**
+   * Get carrier name for a phone number (async)
+   */
+  async getCarrier(phone: string): Promise<string | null> {
+    const normalizedPhone = phone.startsWith('+') ? phone : `+${phone}`;
+    try {
+      const parsed = parsePhoneNumber(normalizedPhone);
+      if (!parsed) return null;
+      return await carrier(parsed);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Get geographic location for a phone number (async)
+   */
+  async getGeocoding(phone: string): Promise<string | null> {
+    const normalizedPhone = phone.startsWith('+') ? phone : `+${phone}`;
+    try {
+      const parsed = parsePhoneNumber(normalizedPhone);
+      if (!parsed) return null;
+      return await geocoder(parsed);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Get timezones for a phone number (async)
+   */
+  async getTimezones(phone: string): Promise<string[]> {
+    const normalizedPhone = phone.startsWith('+') ? phone : `+${phone}`;
+    try {
+      const parsed = parsePhoneNumber(normalizedPhone);
+      if (!parsed) return [];
+      return (await timezones(parsed)) || [];
+    } catch {
+      return [];
     }
   }
 
@@ -232,7 +330,6 @@ class PhoneNumberService {
       country: null,
       countryCallingCode: null,
       numberType: null,
-      carrier: null,
       isValid,
       nationalNumber: null,
       e164: null,
