@@ -144,6 +144,17 @@ const configSchema = z.object({
     cdnUrl: z.string().default('https://cdn.jsdelivr.net/npm/@ip-location-db/asn-mmdb/asn.mmdb'),
     shadowBanUnresolved: z.coerce.boolean().default(true), // Shadow-ban if ASN unresolved after update
   }),
+
+  // CDR streaming configuration for billing/rating
+  cdr: z.object({
+    enabled: z.coerce.boolean().default(false),
+    targetTrunkId: z.string().optional(), // Filter CDRs by trunk ID
+    learningIntervalMinutes: z.coerce.number().int().min(1).max(1440).default(60), // Hourly rate learning
+    learningBatchSize: z.coerce.number().int().min(10).max(10000).default(1000),
+    // Default rates for cost prediction when no learned data (in 1/10000 dollars)
+    defaultSmsRateUnits: z.coerce.number().int().min(1).max(100000).default(100), // $0.01 per SMS
+    defaultVoiceRateUnits: z.coerce.number().int().min(1).max(100000).default(200), // $0.02 per minute
+  }),
 });
 
 /**
@@ -240,6 +251,14 @@ function parseEnvVars(): Record<string, unknown> {
       unresolvedThreshold: process.env.ASN_UNRESOLVED_THRESHOLD,
       cdnUrl: process.env.ASN_CDN_URL,
       shadowBanUnresolved: process.env.ASN_SHADOW_BAN_UNRESOLVED,
+    },
+    cdr: {
+      enabled: process.env.CDR_ENABLED,
+      targetTrunkId: process.env.CDR_TARGET_TRUNK_ID,
+      learningIntervalMinutes: process.env.CDR_LEARNING_INTERVAL_MINUTES,
+      learningBatchSize: process.env.CDR_LEARNING_BATCH_SIZE,
+      defaultSmsRateUnits: process.env.CDR_DEFAULT_SMS_RATE_UNITS,
+      defaultVoiceRateUnits: process.env.CDR_DEFAULT_VOICE_RATE_UNITS,
     },
   };
 }

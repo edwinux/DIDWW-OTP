@@ -29,6 +29,11 @@ export interface OtpRequest {
   end_time: number | null;
   // V6: SMS cost tracking
   sms_cost_units: number | null;
+  // V8: Phone metadata from libphonenumber
+  phone_number_type: string | null;
+  phone_carrier: string | null;
+  phone_geocoding: string | null;
+  phone_timezone: string | null;
 }
 
 export interface WebhookLog {

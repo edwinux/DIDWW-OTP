@@ -57,6 +57,11 @@ export interface OtpRequest {
   updated_at: number;
   expires_at: number | null;
   sms_cost_units: number | null;
+  // V8: Phone metadata from libphonenumber
+  phone_number_type: string | null;
+  phone_carrier: string | null;
+  phone_geocoding: string | null;
+  phone_timezone: string | null;
 }
 
 /**
@@ -79,6 +84,11 @@ export interface CreateOtpRequestInput {
   shadow_banned?: boolean;
   webhook_url?: string;
   expires_at?: number;
+  // V8: Phone metadata from libphonenumber
+  phone_number_type?: string;
+  phone_carrier?: string;
+  phone_geocoding?: string;
+  phone_timezone?: string;
 }
 
 /**
@@ -101,8 +111,9 @@ export class OtpRequestRepository {
         id, session_id, phone, phone_prefix, code_hash, status,
         channels_requested, ip_address, ip_subnet, asn, country_code,
         phone_country, fraud_score, fraud_reasons, shadow_banned,
-        webhook_url, expires_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        webhook_url, expires_at, created_at, updated_at,
+        phone_number_type, phone_carrier, phone_geocoding, phone_timezone
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -124,7 +135,11 @@ export class OtpRequestRepository {
       input.webhook_url || null,
       input.expires_at || null,
       now,
-      now
+      now,
+      input.phone_number_type || null,
+      input.phone_carrier || null,
+      input.phone_geocoding || null,
+      input.phone_timezone || null
     );
 
     return this.findById(input.id)!;

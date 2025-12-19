@@ -11,8 +11,11 @@ import { FraudEngine } from './FraudEngine.js';
 import { WebhookService, type WebhookPayload } from './WebhookService.js';
 import { getShadowBanSimulator } from './ShadowBanSimulator.js';
 import { getStatusTracker } from './StatusTracker.js';
+import { getCostPredictionService } from './CostPredictionService.js';
+import { getPhoneNumberService } from './PhoneNumberService.js';
 import { OtpRequestRepository, type OtpStatus } from '../repositories/OtpRequestRepository.js';
 import { FraudRulesRepository } from '../repositories/FraudRulesRepository.js';
+import { FraudSavingsRepository } from '../repositories/FraudSavingsRepository.js';
 import { getWebSocketServer } from '../admin/websocket.js';
 import { logger } from '../utils/logger.js';
 
@@ -26,6 +29,7 @@ export interface DispatchRequest {
   channels?: ChannelType[];
   webhookUrl?: string;
   ip: string;
+  maxCostUnits?: number; // Maximum cost in 1/10000 dollars
 }
 
 /**
@@ -66,6 +70,7 @@ export class DispatchService {
   private fraudEngine: FraudEngine;
   private webhookService: WebhookService;
   private otpRepo: OtpRequestRepository;
+  private fraudSavingsRepo: FraudSavingsRepository;
   private config: DispatchConfig;
 
   constructor(
@@ -83,6 +88,7 @@ export class DispatchService {
     this.fraudEngine = fraudEngine;
     this.webhookService = webhookService;
     this.otpRepo = otpRepo;
+    this.fraudSavingsRepo = new FraudSavingsRepository();
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
@@ -107,6 +113,10 @@ export class DispatchService {
       sessionId: request.sessionId,
     });
 
+    // Step 1b: Get phone metadata (async - carrier, geocoding, timezone)
+    const phoneService = getPhoneNumberService();
+    const phoneMeta = await phoneService.parseExtended(request.phone).catch(() => null);
+
     // Step 2: Create request record
     const codeHash = this.hashCode(request.code);
     this.otpRepo.create({
@@ -126,15 +136,35 @@ export class DispatchService {
       shadow_banned: fraudResult.shadowBan,
       webhook_url: request.webhookUrl,
       expires_at: Date.now() + 10 * 60 * 1000, // 10 minute expiry
+      // V8: Phone metadata from libphonenumber
+      phone_number_type: phoneMeta?.numberType ?? undefined,
+      phone_carrier: phoneMeta?.carrier ?? undefined,
+      phone_geocoding: phoneMeta?.geocoding ?? undefined,
+      phone_timezone: phoneMeta?.timezones?.[0] ?? undefined,
     });
 
-    // Step 3: Handle shadow ban (ALWAYS return fake success)
+    // Step 3: Get cost prediction for fraud savings tracking
+    const costService = getCostPredictionService();
+    const primaryChannel = channels[0];
+    const costPrediction = costService.predict(primaryChannel, request.phone);
+
+    // Step 4: Handle shadow ban (ALWAYS return fake success)
     if (fraudResult.shadowBan) {
       logger.warn('Request shadow-banned', {
         requestId,
         score: fraudResult.score,
         reasons: fraudResult.reasons,
       });
+
+      // Record fraud savings (estimated cost we avoided)
+      this.fraudSavingsRepo.record(
+        requestId,
+        primaryChannel,
+        costPrediction.estimatedCostUnits,
+        costPrediction.matchedPrefix || fraudResult.phonePrefix || '',
+        fraudResult.score,
+        fraudResult.reasons
+      );
 
       // Use ShadowBanSimulator to emit realistic fake event sequence
       // Events are stored in DB, broadcast via WebSocket, and sent via webhooks
@@ -151,10 +181,35 @@ export class DispatchService {
       };
     }
 
-    // Step 4: Attempt delivery via channels
+    // Step 5: Check max cost limit
+    if (request.maxCostUnits && costPrediction.estimatedCostUnits > request.maxCostUnits) {
+      logger.warn('Request rejected due to cost limit', {
+        requestId,
+        estimatedCost: costPrediction.estimatedCostUnits,
+        maxCost: request.maxCostUnits,
+        confidence: costPrediction.confidence,
+      });
+
+      // Update status to rejected
+      this.otpRepo.updateStatus(requestId, 'failed', {
+        error_message: 'Estimated cost exceeds maximum allowed',
+      });
+      this.broadcastStatusUpdate(requestId, 'failed', primaryChannel);
+
+      return {
+        success: false,
+        requestId,
+        status: 'dispatched', // Return dispatched to hide rejection
+        channel: primaryChannel,
+        phone: request.phone,
+        message: 'Cost limit exceeded',
+      };
+    }
+
+    // Step 6: Attempt delivery via channels
     const deliveryResult = await this.attemptDelivery(requestId, request, channels);
 
-    // Step 5: Send webhook for real delivery
+    // Step 7: Send webhook for real delivery
     if (request.webhookUrl) {
       this.sendWebhook(request.webhookUrl, {
         event: deliveryResult.success ? 'otp.sent' : 'otp.failed',
