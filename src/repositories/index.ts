@@ -38,3 +38,6 @@ export type { CdrRecord, CreateCdrInput } from './CdrRepository.js';
 
 export { CarrierRatesRepository } from './CarrierRatesRepository.js';
 export type { CarrierRate, UpsertRateInput } from './CarrierRatesRepository.js';
+
+export { FraudSavingsRepository } from './FraudSavingsRepository.js';
+export type { FraudSaving } from './FraudSavingsRepository.js';
