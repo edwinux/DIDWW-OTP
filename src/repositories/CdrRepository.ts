@@ -336,6 +336,14 @@ export class CdrRepository {
   }
 
   /**
+   * Find recent CDR records
+   */
+  findRecent(limit: number = 50): CdrRecord[] {
+    const db = dbManager.getDb();
+    return db.prepare('SELECT * FROM cdr_records ORDER BY time_start DESC LIMIT ?').all(limit) as CdrRecord[];
+  }
+
+  /**
    * Cleanup old CDR records
    */
   cleanup(olderThanDays: number): number {
