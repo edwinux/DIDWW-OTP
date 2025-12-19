@@ -29,6 +29,9 @@ export interface OtpRequest {
   end_time: number | null;
   // V6: SMS cost tracking
   sms_cost_units: number | null;
+  // V9: Voice cost tracking
+  voice_cost_units: number | null;
+  voice_duration_seconds: number | null;
   // V8: Phone metadata from libphonenumber
   phone_number_type: string | null;
   phone_carrier: string | null;
@@ -65,7 +68,8 @@ export interface VoiceChannelStats {
   avgDuration: number | null;      // seconds
   successRate: number;             // % delivered/answered
   authSuccessRate: number;         // % verified
-  avgCost: number | null;          // placeholder for future
+  avgCost: number | null;          // avg cost per call in USD
+  totalCost: number | null;        // total cost for period in USD
 }
 
 export interface SmsChannelStats {

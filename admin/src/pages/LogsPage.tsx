@@ -94,6 +94,21 @@ const columns: ColumnDef<OtpRequest>[] = [
     ),
   },
   {
+    accessorKey: 'cost',
+    header: 'Cost',
+    cell: ({ row }) => {
+      const smsCost = row.original.sms_cost_units;
+      const voiceCost = row.original.voice_cost_units;
+      const cost = smsCost ?? voiceCost;
+      if (cost === null || cost === undefined) {
+        return <span className="text-muted-foreground text-xs">-</span>;
+      }
+      // Convert from 1/10000 dollars to USD
+      const costUsd = cost / 10000;
+      return <span className="font-mono text-xs">${costUsd.toFixed(4)}</span>;
+    },
+  },
+  {
     accessorKey: 'created_at',
     header: 'Created',
     cell: ({ row }) => (
