@@ -97,11 +97,11 @@ export function registerStasisHandlers(client: AriClient): void {
 }
 
 /**
- * Handle the OTP call flow: answer, generate TTS, play message, hangup
+ * Handle the OTP call flow: answer, play message (TTS or pre-recorded), hangup
  */
 async function handleOtpCall(client: AriClient, channel: Channel, callState: CallState, callId: string): Promise<void> {
   const config = getConfig();
-  const { messageTemplate, speed } = config.voice;
+  const { messageTemplate, speed, usePrerecordedSounds } = config.voice;
   const tracker = getCallTracker();
 
   // Answer the call
@@ -112,12 +112,18 @@ async function handleOtpCall(client: AriClient, channel: Channel, callState: Cal
   emitOtpEvent(callId, 'voice', 'playing');
 
   try {
-    // Generate TTS audio from template
-    const soundRef = await generateOtpTts(messageTemplate, callState.code, speed);
-    logger.debug('Playing TTS audio', { soundRef });
+    if (usePrerecordedSounds) {
+      // Use pre-recorded sound files
+      logger.debug('Playing pre-recorded sounds', { code: callState.code });
+      await playPrerecordedOtp(client, channel, callState.code, config.voice.digitPauseMs);
+    } else {
+      // Generate TTS audio from template
+      const soundRef = await generateOtpTts(messageTemplate, callState.code, speed);
+      logger.debug('Playing TTS audio', { soundRef });
 
-    // Play the TTS message
-    await playSound(client, channel, `sound:${soundRef}`);
+      // Play the TTS message
+      await playSound(client, channel, `sound:${soundRef}`);
+    }
 
     // Mark OTP as played successfully
     tracker.markOtpPlayed(callId);
@@ -132,9 +138,9 @@ async function handleOtpCall(client: AriClient, channel: Channel, callState: Cal
       throw error; // Re-throw to be handled by caller
     }
 
-    logger.error('TTS playback failed, falling back to digits', { error: msg });
+    logger.error('Playback failed, falling back to digits', { error: msg });
 
-    // Fallback: just speak digits if TTS fails
+    // Fallback: just speak digits if playback fails
     await speakDigits(client, channel, callState.code, config.voice.digitPauseMs);
     tracker.markOtpPlayed(callId);
     await sleep(500);
@@ -195,6 +201,37 @@ async function speakDigits(client: AriClient, channel: Channel, code: string, pa
     await playSound(client, channel, `sound:digits/${digit}`);
     await sleep(pauseMs);
   }
+}
+
+/**
+ * Play pre-recorded OTP message sequence:
+ * Hello -> digits -> Repeating -> digits -> Thankyou
+ */
+async function playPrerecordedOtp(client: AriClient, channel: Channel, code: string, pauseMs: number): Promise<void> {
+  // Play intro
+  await playSound(client, channel, 'sound:custom/Hello');
+  await sleep(300);
+
+  // Play digits first time
+  for (const digit of code) {
+    await playSound(client, channel, `sound:custom/${digit}`);
+    await sleep(pauseMs);
+  }
+
+  // Play "Repeating"
+  await sleep(300);
+  await playSound(client, channel, 'sound:custom/Repeating');
+  await sleep(300);
+
+  // Play digits second time
+  for (const digit of code) {
+    await playSound(client, channel, `sound:custom/${digit}`);
+    await sleep(pauseMs);
+  }
+
+  // Play outro
+  await sleep(300);
+  await playSound(client, channel, 'sound:custom/Thankyou');
 }
 
 /**
