@@ -8,6 +8,7 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { CdrRepository, type CreateCdrInput } from '../repositories/CdrRepository.js';
+import { OtpRequestRepository } from '../repositories/OtpRequestRepository.js';
 import { getPhoneNumberService } from '../services/PhoneNumberService.js';
 import { logger } from '../utils/logger.js';
 
@@ -61,10 +62,12 @@ function parseTimestamp(isoString: string | null | undefined): number | null {
  */
 export class CdrController {
   private cdrRepo: CdrRepository;
+  private otpRepo: OtpRequestRepository;
   private targetTrunkId: string;
 
   constructor(cdrRepo: CdrRepository, targetTrunkId: string) {
     this.cdrRepo = cdrRepo;
+    this.otpRepo = new OtpRequestRepository();
     this.targetTrunkId = targetTrunkId;
   }
 
@@ -235,6 +238,17 @@ export class CdrController {
         inserted = this.cdrRepo.bulkCreate(validCdrs);
       }
 
+      // Correlate CDRs with OTP requests and update voice cost
+      let correlated = 0;
+      for (const cdrInput of validCdrs) {
+        const matched = this.correlateWithOtpRequest(cdrInput);
+        if (matched) correlated++;
+      }
+
+      if (correlated > 0) {
+        logger.info('CDRs correlated with OTP requests', { correlated, total: validCdrs.length });
+      }
+
       const duration = Date.now() - startTime;
 
       logger.info('CDR batch processed', {
@@ -281,5 +295,63 @@ export class CdrController {
 
     // Could also check p_charge_info or other fields
     return null;
+  }
+
+  /**
+   * Correlate CDR with OTP request and update voice cost
+   * Matches by destination phone number and time window
+   */
+  private correlateWithOtpRequest(cdr: CreateCdrInput): boolean {
+    try {
+      // Normalize phone number (add + prefix if missing)
+      let phone = cdr.dst_number;
+      if (!phone.startsWith('+')) {
+        phone = '+' + phone;
+      }
+
+      // Find matching OTP request
+      const otpRequest = this.otpRepo.findRecentVoiceByPhone(phone, cdr.time_start);
+
+      if (!otpRequest) {
+        logger.debug('No matching OTP request for CDR', {
+          cdrId: cdr.id,
+          dstNumber: phone,
+          timeStart: new Date(cdr.time_start).toISOString(),
+        });
+        return false;
+      }
+
+      // Convert price to storage units (1/10000 dollars)
+      // DIDWW price is in dollars
+      const costUnits = Math.round(cdr.price * 10000);
+
+      // Update OTP request with voice cost data
+      this.otpRepo.updateVoiceCost(
+        otpRequest.id,
+        costUnits,
+        cdr.duration,
+        cdr.time_start,
+        cdr.time_connect ?? null,
+        cdr.time_end
+      );
+
+      logger.info('CDR correlated with OTP request', {
+        cdrId: cdr.id,
+        otpRequestId: otpRequest.id,
+        phone,
+        duration: cdr.duration,
+        costUnits,
+        costUsd: cdr.price,
+      });
+
+      return true;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error('Failed to correlate CDR with OTP request', {
+        cdrId: cdr.id,
+        error: msg,
+      });
+      return false;
+    }
   }
 }
