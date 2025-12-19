@@ -219,6 +219,49 @@ export class OtpRequestRepository {
   }
 
   /**
+   * Update voice cost and timing from CDR
+   */
+  updateVoiceCost(
+    id: string,
+    costUnits: number,
+    durationSeconds: number,
+    startTime: number,
+    answerTime: number | null,
+    endTime: number
+  ): void {
+    const stmt = this.db.prepare(`
+      UPDATE otp_requests
+      SET voice_cost_units = ?,
+          voice_duration_seconds = ?,
+          start_time = ?,
+          answer_time = ?,
+          end_time = ?,
+          updated_at = ?
+      WHERE id = ?
+    `);
+    stmt.run(costUnits, durationSeconds, startTime, answerTime, endTime, Date.now(), id);
+  }
+
+  /**
+   * Find recent voice request by phone number for CDR correlation
+   * Returns the most recent voice request within the time window
+   */
+  findRecentVoiceByPhone(phone: string, callStartTime: number, windowMinutes: number = 5): OtpRequest | null {
+    // Look for requests created within windowMinutes before the call start
+    const windowStart = callStartTime - windowMinutes * 60 * 1000;
+    const stmt = this.db.prepare(`
+      SELECT * FROM otp_requests
+      WHERE phone = ?
+        AND channel = 'voice'
+        AND created_at BETWEEN ? AND ?
+        AND voice_cost_units IS NULL
+      ORDER BY created_at DESC
+      LIMIT 1
+    `);
+    return stmt.get(phone, windowStart, callStartTime) as OtpRequest | null;
+  }
+
+  /**
    * Find recent requests by phone number
    */
   findRecentByPhone(phone: string, windowMinutes: number): OtpRequest[] {
