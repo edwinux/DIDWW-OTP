@@ -94,7 +94,12 @@ export class OtpEventService {
 
       // Get high-level status from event
       const statusKey = `${channel}:${eventType}`;
-      const newStatus = EVENT_TO_STATUS_MAP[statusKey];
+      let newStatus = EVENT_TO_STATUS_MAP[statusKey];
+
+      // Special case: voice:hangup with otp_played=true means successful delivery
+      if (statusKey === 'voice:hangup' && eventData?.otp_played === true) {
+        newStatus = 'delivered';
+      }
 
       // Update OTP request with new channel_status and error_message if present
       this.updateRequestStatus(requestId, channel, eventType, newStatus, eventData);
