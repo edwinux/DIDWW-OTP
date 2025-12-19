@@ -10,6 +10,7 @@ import type { DispatchService } from '../services/DispatchService.js';
 import { OtpRequestRepository } from '../repositories/OtpRequestRepository.js';
 import { emitOtpEvent } from '../services/OtpEventService.js';
 import { SmsCost } from '../domain/SmsCost.js';
+import { getCostPredictionService } from '../services/CostPredictionService.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -216,7 +217,15 @@ export class WebhookController {
       const smsCost = SmsCost.fromDidww(data.attributes.price, data.attributes.fragments_sent);
       if (smsCost) {
         otpRepo.updateSmsCost(otpRequest.id, smsCost.toStorageUnits());
-        logger.info('SMS cost recorded', {
+
+        // Learn SMS rate for cost prediction
+        getCostPredictionService().learnSmsRate(
+          otpRequest.phone,
+          smsCost.toStorageUnits(),
+          data.attributes.fragments_sent || 1
+        );
+
+        logger.info('SMS cost recorded and learned', {
           requestId: otpRequest.id,
           price: data.attributes.price,
           fragments: data.attributes.fragments_sent,

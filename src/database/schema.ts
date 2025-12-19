@@ -10,7 +10,7 @@ import { logger } from '../utils/logger.js';
 /**
  * Schema version for migration tracking
  */
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 /**
  * SQL schema definitions
@@ -225,6 +225,120 @@ CREATE INDEX IF NOT EXISTS idx_fraud_whitelist_type_value ON fraud_whitelist(typ
 `;
 
 /**
+ * V8 Migration: Billing/Rating System
+ * - CDR records for voice call audit trail
+ * - Carrier rates for learned pricing per prefix
+ * - Fraud savings tracking
+ * - Phone metadata columns
+ */
+const V8_MIGRATION_SQL = `
+-- Call Detail Records (raw audit trail from DIDWW CDR streaming)
+CREATE TABLE IF NOT EXISTS cdr_records (
+  id TEXT PRIMARY KEY,
+  call_id TEXT NOT NULL,
+  trunk_id TEXT NOT NULL,
+
+  -- Timestamps (INTEGER milliseconds)
+  time_start INTEGER NOT NULL,
+  time_connect INTEGER,
+  time_end INTEGER NOT NULL,
+
+  -- Duration and billing
+  duration INTEGER NOT NULL,
+  billing_duration INTEGER NOT NULL,
+  initial_billing_interval INTEGER,
+  next_billing_interval INTEGER,
+
+  -- Pricing (stored as REAL for DIDWW precision)
+  rate REAL NOT NULL,
+  price REAL NOT NULL,
+
+  -- Call status
+  success INTEGER NOT NULL,
+  disconnect_code INTEGER,
+  disconnect_reason TEXT,
+
+  -- Network info
+  source_ip TEXT,
+  trunk_name TEXT,
+  pop TEXT,
+
+  -- Numbers and routing
+  src_number TEXT NOT NULL,
+  dst_number TEXT NOT NULL,
+  dst_prefix TEXT NOT NULL,
+  src_prefix TEXT,
+  call_type TEXT,
+
+  -- Ingestion metadata
+  ingested_at INTEGER NOT NULL,
+  processed_for_rates INTEGER DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_cdr_records_trunk_id ON cdr_records(trunk_id);
+CREATE INDEX IF NOT EXISTS idx_cdr_records_dst_prefix ON cdr_records(dst_prefix);
+CREATE INDEX IF NOT EXISTS idx_cdr_records_time_start ON cdr_records(time_start);
+CREATE INDEX IF NOT EXISTS idx_cdr_records_processed ON cdr_records(processed_for_rates);
+
+-- Learned carrier rates (aggregated from CDRs and DLRs)
+CREATE TABLE IF NOT EXISTS carrier_rates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel TEXT NOT NULL CHECK(channel IN ('sms', 'voice')),
+  dst_prefix TEXT NOT NULL,
+  src_prefix TEXT,
+
+  -- Rate statistics (stored in 1/10000 dollars like SmsCost)
+  rate_avg INTEGER NOT NULL,
+  rate_min INTEGER NOT NULL,
+  rate_max INTEGER NOT NULL,
+
+  -- Billing metadata
+  billing_increment INTEGER DEFAULT 1,
+
+  -- Learning metadata
+  sample_count INTEGER DEFAULT 1,
+  confidence_score REAL DEFAULT 0.5,
+  last_seen_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+
+  UNIQUE(channel, dst_prefix, src_prefix)
+);
+
+CREATE INDEX IF NOT EXISTS idx_carrier_rates_lookup ON carrier_rates(channel, dst_prefix);
+CREATE INDEX IF NOT EXISTS idx_carrier_rates_updated ON carrier_rates(updated_at);
+
+-- Fraud savings tracking (estimated cost of blocked requests)
+CREATE TABLE IF NOT EXISTS fraud_savings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  request_id TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  estimated_cost_units INTEGER NOT NULL,
+  dst_prefix TEXT NOT NULL,
+  fraud_score INTEGER NOT NULL,
+  fraud_reasons TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (request_id) REFERENCES otp_requests(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fraud_savings_created_at ON fraud_savings(created_at);
+CREATE INDEX IF NOT EXISTS idx_fraud_savings_request_id ON fraud_savings(request_id);
+`;
+
+/**
+ * V8 Migration Part 2: Add columns to otp_requests
+ */
+const V8_ALTER_SQL = `
+-- Voice cost tracking
+ALTER TABLE otp_requests ADD COLUMN voice_cost_units INTEGER;
+ALTER TABLE otp_requests ADD COLUMN voice_duration_seconds INTEGER;
+
+-- Phone metadata from libphonenumber
+ALTER TABLE otp_requests ADD COLUMN phone_number_type TEXT;
+ALTER TABLE otp_requests ADD COLUMN phone_carrier TEXT;
+`;
+
+/**
  * Run database migrations
  */
 export function runMigrations(): void {
@@ -334,6 +448,33 @@ export function runMigrations(): void {
       const msg = err instanceof Error ? err.message : String(err);
       if (!msg.includes('already exists')) {
         throw err;
+      }
+    }
+  }
+
+  // Run V8 migration if upgrading from V7 or earlier
+  if (currentVersion < 8) {
+    logger.info('Applying V8 migration...', { from: currentVersion, to: 8 });
+    try {
+      // Create new tables
+      db.exec(V8_MIGRATION_SQL);
+    } catch (err) {
+      // Tables might already exist
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('already exists')) {
+        throw err;
+      }
+    }
+    // Add columns to otp_requests (run each ALTER separately for better error handling)
+    const alterStatements = V8_ALTER_SQL.split(';').filter((s) => s.trim());
+    for (const stmt of alterStatements) {
+      try {
+        db.exec(stmt);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.includes('duplicate column')) {
+          throw err;
+        }
       }
     }
   }

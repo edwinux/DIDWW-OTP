@@ -10,11 +10,15 @@ import { ariManager } from './ari/client.js';
 import { registerStasisHandlers } from './ari/handlers.js';
 import { getAmiClient } from './ami/client.js';
 import { registerAmiHandlers } from './ami/handlers.js';
-import { OtpRequestRepository, FraudRulesRepository, WebhookLogRepository, WhitelistRepository } from './repositories/index.js';
+import { OtpRequestRepository, FraudRulesRepository, WebhookLogRepository, WhitelistRepository, CdrRepository, CarrierRatesRepository } from './repositories/index.js';
+import { CdrController } from './controllers/CdrController.js';
+import { RateLearningService } from './services/RateLearningService.js';
+import { initCostPredictionService } from './services/CostPredictionService.js';
 import { SmsChannelProvider, VoiceChannelProvider } from './channels/index.js';
 import { FraudEngine, WebhookService, DispatchService } from './services/index.js';
 import { initializeCallerIdRouter } from './services/CallerIdRouter.js';
 import { initAsnDatabase, getAsnDatabase } from './services/AsnDatabase.js';
+import { initializePhoneNumberService, getPhoneNumberService } from './services/PhoneNumberService.js';
 import { createServer } from './server.js';
 import { startAdminServer } from './admin/index.js';
 import { logger } from './utils/logger.js';
@@ -53,6 +57,10 @@ async function main(): Promise<void> {
       cdnUrl: config.asn.cdnUrl,
       shadowBanUnresolved: config.asn.shadowBanUnresolved,
     });
+
+    // Initialize phone number service (libphonenumber-js)
+    initializePhoneNumberService();
+    logger.info('Phone number service initialized');
 
     // Initialize repositories
     const otpRepo = new OtpRequestRepository();
@@ -120,6 +128,8 @@ async function main(): Promise<void> {
       logger.info(`Received ${signal}, shutting down...`);
       await ariManager.disconnect();
       getAsnDatabase().stopPeriodicUpdates();
+      getPhoneNumberService().shutdown();
+      rateLearningService?.stopPeriodicLearning();
       dbManager.close();
       process.exit(0);
     };
@@ -151,8 +161,30 @@ async function main(): Promise<void> {
       }
     }
 
+    // Initialize carrier rates and cost prediction
+    const carrierRatesRepo = new CarrierRatesRepository();
+    initCostPredictionService(carrierRatesRepo);
+    logger.info('Cost prediction service initialized');
+
+    // Initialize CDR controller and rate learning if enabled
+    let cdrController: CdrController | undefined;
+    let rateLearningService: RateLearningService | undefined;
+    if (config.cdr.enabled) {
+      const cdrRepo = new CdrRepository();
+      cdrController = new CdrController(cdrRepo, config.cdr.targetTrunkId || '');
+
+      // Start rate learning service
+      rateLearningService = new RateLearningService(cdrRepo, carrierRatesRepo, config.cdr.learningBatchSize);
+      rateLearningService.startPeriodicLearning(config.cdr.learningIntervalMinutes);
+
+      logger.info('CDR ingestion and rate learning enabled', {
+        targetTrunkId: config.cdr.targetTrunkId,
+        learningInterval: config.cdr.learningIntervalMinutes
+      });
+    }
+
     // Create and start HTTP server
-    const app = createServer(dispatchService);
+    const app = createServer(dispatchService, { cdrController });
     const port = config.api.port;
 
     app.listen(port, () => {
