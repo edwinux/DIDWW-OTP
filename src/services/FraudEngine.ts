@@ -11,6 +11,7 @@ import { WhitelistRepository } from '../repositories/WhitelistRepository.js';
 import { getCountryFromIp, getCountryFromPhone, getPhonePrefix, resolveAsnFromIp, shouldShadowBanUnresolvedAsn } from '../utils/geoip.js';
 import { getIpSubnet } from '../utils/ipv6.js';
 import { logger } from '../utils/logger.js';
+import { getPhoneNumberService } from './PhoneNumberService.js';
 
 /**
  * Fraud check request
@@ -156,7 +157,36 @@ export class FraudEngine {
       };
     }
 
-    // Rule 0: Unresolved ASN after update attempt (suspicious - potential new VPN/datacenter)
+    // Rule 0: Invalid phone number (instant shadow-ban)
+    const phoneService = getPhoneNumberService();
+    if (!phoneService.isValid(phone)) {
+      score = 100;
+      reasons.push('invalid_phone_number');
+
+      logger.warn('FRAUD: Invalid phone number', {
+        ip,
+        ipSubnet,
+        phone: phone.slice(0, 5) + '***',
+      });
+
+      // Track invalid attempts for IP fraud scoring
+      this.fraudRepo.recordFailedRequest(ipSubnet);
+      this.fraudRepo.incrementFailures(`ip:${ipSubnet}`);
+
+      return {
+        allowed: false,
+        shadowBan: true,
+        score,
+        reasons,
+        ipSubnet,
+        ipCountry,
+        phoneCountry,
+        phonePrefix,
+        asn,
+      };
+    }
+
+    // Rule 1: Unresolved ASN after update attempt (suspicious - potential new VPN/datacenter)
     if (!asnResult.resolved && shouldShadowBanUnresolvedAsn()) {
       score = 100;
       reasons.push('asn_unresolved_after_update');
@@ -180,7 +210,7 @@ export class FraudEngine {
       };
     }
 
-    // Rule 1: ASN Blocklist (instant shadow-ban, zero tolerance)
+    // Rule 2: ASN Blocklist (instant shadow-ban, zero tolerance)
     if (asn && this.fraudRepo.isAsnBlocked(asn)) {
       const asnEntry = this.fraudRepo.getAsnEntry(asn);
       score = 100;
@@ -207,7 +237,7 @@ export class FraudEngine {
       };
     }
 
-    // Rule 2: Honeypot check (previously shadow-banned IP)
+    // Rule 3: Honeypot check (previously shadow-banned IP)
     if (this.fraudRepo.isHoneypot(ipSubnet)) {
       score = 100;
       reasons.push('honeypot_ip');
@@ -231,7 +261,7 @@ export class FraudEngine {
       };
     }
 
-    // Rule 3: IP banned
+    // Rule 4: IP banned
     if (this.fraudRepo.isIpBanned(ipSubnet)) {
       score = 100;
       reasons.push('ip_banned');
@@ -255,7 +285,7 @@ export class FraudEngine {
       };
     }
 
-    // Rule 4: Rate limiting by IP subnet (per minute)
+    // Rule 5: Rate limiting by IP subnet (per minute)
     const recentByIpMinute = this.otpRepo.countByIpSubnet(ipSubnet, 1);
     if (recentByIpMinute >= this.config.rateLimitPerMinute) {
       score += 50;
@@ -269,7 +299,7 @@ export class FraudEngine {
       });
     }
 
-    // Rule 5: Rate limiting by IP subnet (per hour)
+    // Rule 6: Rate limiting by IP subnet (per hour)
     const recentByIpHour = this.otpRepo.countByIpSubnet(ipSubnet, 60);
     if (recentByIpHour >= this.config.rateLimitPerHour) {
       score += 40;
@@ -283,7 +313,7 @@ export class FraudEngine {
       });
     }
 
-    // Rule 6: Rate limiting by phone number
+    // Rule 7: Rate limiting by phone number
     const recentByPhone = this.otpRepo.countByPhone(phone, 60);
     if (recentByPhone >= this.config.rateLimitPerHour) {
       score += 30;
@@ -296,7 +326,7 @@ export class FraudEngine {
       });
     }
 
-    // Rule 7: Geo mismatch (IP country != phone country)
+    // Rule 8: Geo mismatch (IP country != phone country)
     if (ipCountry && phoneCountry && ipCountry !== phoneCountry) {
       score += this.config.geoMatchPenalty;
       reasons.push(`geo_mismatch:${ipCountry}:${phoneCountry}`);
@@ -309,7 +339,7 @@ export class FraudEngine {
       });
     }
 
-    // Rule 8: Allowed countries check
+    // Rule 9: Allowed countries check
     if (this.config.allowedCountries && this.config.allowedCountries.length > 0) {
       if (phoneCountry && !this.config.allowedCountries.includes(phoneCountry)) {
         score += 40;
@@ -322,7 +352,7 @@ export class FraudEngine {
       }
     }
 
-    // Rule 9: Circuit breaker for phone
+    // Rule 10: Circuit breaker for phone
     const phoneCircuitBreaker = this.fraudRepo.getCircuitBreaker(`phone:${phone}`);
     if (phoneCircuitBreaker) {
       if (phoneCircuitBreaker.state === 'open') {
@@ -348,7 +378,7 @@ export class FraudEngine {
       }
     }
 
-    // Rule 10: Circuit breaker for IP
+    // Rule 11: Circuit breaker for IP
     const ipCircuitBreaker = this.fraudRepo.getCircuitBreaker(`ip:${ipSubnet}`);
     if (ipCircuitBreaker) {
       if (ipCircuitBreaker.state === 'open') {
