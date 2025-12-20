@@ -38,7 +38,8 @@ The gateway processes OTP requests through fraud detection, routes to appropriat
   - Lines 60-106: Retry logic with exponential backoff
   - Lines 111-187: Single delivery attempt with timeout handling
 
-- `FraudEngine.ts:71-391` - Intelligent fraud detection
+- `FraudEngine.ts:71-434` - Intelligent fraud detection
+  - Phone number validation using libphonenumber (Rule 0)
   - Rate limiting per phone and IP subnet
   - ASN-based blocking for VPN/datacenter detection
   - Geographic anomaly detection
@@ -161,6 +162,9 @@ See `.env.example` for complete configuration reference.
 
 ## Key Patterns
 
+### Phone Number Validation
+Invalid phone numbers are detected and shadow-banned before any delivery attempt. Uses libphonenumber-js to validate both syntax and number validity. Invalid attempts contribute to IP fraud scoring via recordFailedRequest() and incrementFailures(). Always enabled, no configuration needed. See FraudEngine.ts:160-187 (Rule 0).
+
 ### Shadow Ban Implementation
 High fraud score requests (>= threshold) appear successful to caller but are never actually delivered. Fake events are emitted with realistic delays to prevent detection. See DispatchService.ts:128-162.
 
@@ -231,19 +235,35 @@ GitHub Actions builds Docker image on every push to main, tags with commit SHA, 
 - Deployment: Automatic on push to main branch
 - Registry: GitHub Container Registry (ghcr.io)
 
-### Production Server Data Locations
-- **Database (IMPORTANT)**: `/opt/didww-otp/data/otp.db` - Contains all production data including caller_id_routes, OTP requests, fraud rules, etc.
-- **Application code**: `/root/DIDWW-OTP/` - Git repo clone
-- **Docker compose**: `/root/DIDWW-OTP/docker-compose-temp.yml` - Working compose file
-- **Environment config**: `/root/DIDWW-OTP/.env` - Production secrets
-- **Nginx config**: `/etc/nginx/sites-enabled/` - Reverse proxy (admin on 8081, API on 8080)
-- **Sound files**: `/root/DIDWW-OTP/sounds/converted/` - Pre-recorded OTP sounds
+### Production Server Data Locations (Consolidated Dec 2024)
+Single source of truth: `/opt/didww-otp/`
 
-**Critical**: When redeploying, ensure data volume mount points to `/opt/didww-otp/data` NOT `/root/DIDWW-OTP/data` to preserve production data.
+- **Database**: `/opt/didww-otp/data/otp.db` - All production data (OTP requests, fraud rules, caller_id_routes, etc.)
+- **Docker compose**: `/opt/didww-otp/docker-compose.yml` - Production container config
+- **Environment config**: `/opt/didww-otp/.env` - All production secrets and settings
+- **Sound files**: `/opt/didww-otp/sounds/converted/` - Pre-recorded OTP sounds (mounted to container)
+- **Nginx config**: `/etc/nginx/sites-enabled/` - Reverse proxy (admin on 8081, API on 8080)
+- **Container name**: `didww-otp-gateway` (only one container should exist)
+
+**Archived (do not use):**
+- `/root/DIDWW-OTP.archived-*` - Old manual setup (archived for backup)
+- `/root/db-backups-archived/` - Old stale databases
+
+**CI/CD Deploy Flow:**
+1. GitHub Actions builds image, pushes to GHCR
+2. SSH to server, runs `/opt/didww-otp/scripts/deploy.sh`
+3. Script pulls image, restarts container from `/opt/didww-otp/`
+4. Health check with automatic rollback on failure
 
 See docs/DEPLOYMENT.md for detailed deployment instructions.
 
 ## Recent Changes
+Phone Number Validation (Dec 2024):
+- Added phone validation as FraudEngine Rule 0 using libphonenumber-js
+- Invalid numbers are shadow-banned (fake success, no delivery)
+- Invalid attempts contribute to IP fraud scoring
+- Always enabled, no configuration needed
+
 CI/CD and Production Deployment:
 - GitHub Actions workflow for automated Docker builds and deployments
 - Production deployment script with automatic rollback on health check failures
