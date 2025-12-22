@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -15,6 +15,7 @@ import {
   LogOut,
   Shield,
   GitCommit,
+  X,
 } from 'lucide-react';
 
 interface NavItem {
@@ -32,10 +33,21 @@ const navItems: NavItem[] = [
   { to: '/settings', icon: <Settings className="h-5 w-5" />, label: 'Settings' },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  mobileMenuOpen?: boolean;
+  onMobileMenuClose?: () => void;
+}
+
+export function Sidebar({ mobileMenuOpen = false, onMobileMenuClose }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [version, setVersion] = useState<{ commit: string; buildTime: string | null } | null>(null);
   const { logout } = useAuth();
+  const location = useLocation();
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    onMobileMenuClose?.();
+  }, [location.pathname]);
 
   useEffect(() => {
     fetch('/admin/version')
@@ -50,19 +62,44 @@ export function Sidebar() {
 
   return (
     <TooltipProvider delayDuration={0}>
+      {/* Mobile backdrop */}
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 md:hidden"
+          onClick={onMobileMenuClose}
+        />
+      )}
+
       <aside
         className={cn(
           'flex flex-col h-screen bg-card border-r border-border transition-all duration-300',
-          collapsed ? 'w-16' : 'w-60'
+          // Desktop: normal sidebar behavior
+          'hidden md:flex',
+          collapsed ? 'w-16' : 'w-60',
+          // Mobile: fixed overlay when open
+          mobileMenuOpen && 'fixed inset-y-0 left-0 z-50 flex w-60'
         )}
       >
         {/* Logo/Brand */}
-        <div className="flex items-center h-16 px-4 border-b border-border">
-          <Shield className="h-8 w-8 text-primary shrink-0" />
-          {!collapsed && (
-            <span className="ml-3 font-semibold text-lg text-foreground whitespace-nowrap">
-              OTP Gateway
-            </span>
+        <div className="flex items-center justify-between h-16 px-4 border-b border-border">
+          <div className="flex items-center">
+            <Shield className="h-8 w-8 text-primary shrink-0" />
+            {!collapsed && (
+              <span className="ml-3 font-semibold text-lg text-foreground whitespace-nowrap">
+                OTP Gateway
+              </span>
+            )}
+          </div>
+          {/* Mobile close button */}
+          {mobileMenuOpen && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden"
+              onClick={onMobileMenuClose}
+            >
+              <X className="h-5 w-5" />
+            </Button>
           )}
         </div>
 
