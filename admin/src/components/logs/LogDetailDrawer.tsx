@@ -87,9 +87,11 @@ export function LogDetailDrawer({ log, onClose }: LogDetailDrawerProps) {
               </div>
 
               {/* Fraud Score */}
-              <div className="space-y-2">
+              <div className="space-y-2 min-w-0 overflow-hidden">
                 <p className="text-sm text-muted-foreground">Fraud Score</p>
-                <RiskScoreBar score={log.fraud_score} />
+                <div className="min-w-0">
+                  <RiskScoreBar score={log.fraud_score} />
+                </div>
               </div>
 
               <Separator />
@@ -276,14 +278,16 @@ export function LogDetailDrawer({ log, onClose }: LogDetailDrawerProps) {
 
               {/* Raw Data */}
               <Separator />
-              <div className="space-y-2 min-w-0">
+              <div className="space-y-2 min-w-0 overflow-hidden">
                 <h3 className="text-sm font-medium flex items-center gap-2">
                   <Globe className="h-4 w-4 text-muted-foreground" />
                   Raw Data
                 </h3>
-                <pre className="p-3 rounded-md bg-muted text-xs font-mono overflow-x-auto overflow-y-auto max-h-48 whitespace-pre">
-                  {JSON.stringify(log, null, 2)}
-                </pre>
+                <div className="overflow-x-auto overflow-y-auto max-h-48 rounded-md bg-muted">
+                  <pre className="p-3 text-xs font-mono whitespace-pre w-max min-w-full">
+                    {JSON.stringify(log, null, 2)}
+                  </pre>
+                </div>
               </div>
             </div>
           </ScrollArea>
