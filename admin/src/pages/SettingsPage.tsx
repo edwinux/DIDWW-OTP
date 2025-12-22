@@ -395,8 +395,8 @@ export default function SettingsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex items-end gap-4">
-                <div className="flex-1 max-w-xs space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-end gap-3 sm:gap-4">
+                <div className="flex-1 sm:max-w-xs space-y-2">
                   <Label htmlFor="test-phone">Phone Number</Label>
                   <Input
                     id="test-phone"
@@ -406,7 +406,7 @@ export default function SettingsPage() {
                     onKeyDown={(e) => e.key === 'Enter' && handleTestRouting()}
                   />
                 </div>
-                <Button onClick={handleTestRouting} disabled={testing || !testPhone.trim()}>
+                <Button onClick={handleTestRouting} disabled={testing || !testPhone.trim()} className="w-full sm:w-auto">
                   {testing ? (
                     <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
                   ) : (
@@ -417,7 +417,7 @@ export default function SettingsPage() {
               </div>
 
               {testResult && (
-                <div className="mt-4 grid grid-cols-2 gap-4">
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <TestResultCard
                     channel="sms"
                     result={testResult.sms}
@@ -435,31 +435,33 @@ export default function SettingsPage() {
         {/* System Tab */}
         <TabsContent value="system" className="mt-4 space-y-6">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Shield className="h-5 w-5" />
-                  Fraud Whitelist
-                </CardTitle>
-                <CardDescription>
-                  Whitelisted IPs and phone numbers bypass all fraud detection (score = 0)
-                </CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <Select value={whitelistFilter} onValueChange={(v) => setWhitelistFilter(v as WhitelistType | 'all')}>
-                  <SelectTrigger className="w-[130px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All ({whitelistStats.ip + whitelistStats.phone})</SelectItem>
-                    <SelectItem value="ip">IP ({whitelistStats.ip})</SelectItem>
-                    <SelectItem value="phone">Phone ({whitelistStats.phone})</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button onClick={openWhitelistDialog}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Entry
-                </Button>
+            <CardHeader className="pb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Shield className="h-5 w-5" />
+                    Fraud Whitelist
+                  </CardTitle>
+                  <CardDescription>
+                    Whitelisted IPs and phone numbers bypass fraud detection
+                  </CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Select value={whitelistFilter} onValueChange={(v) => setWhitelistFilter(v as WhitelistType | 'all')}>
+                    <SelectTrigger className="w-[110px] sm:w-[130px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All ({whitelistStats.ip + whitelistStats.phone})</SelectItem>
+                      <SelectItem value="ip">IP ({whitelistStats.ip})</SelectItem>
+                      <SelectItem value="phone">Phone ({whitelistStats.phone})</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button onClick={openWhitelistDialog} size="sm" className="sm:size-default">
+                    <Plus className="h-4 w-4 sm:mr-2" />
+                    <span className="hidden sm:inline">Add Entry</span>
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>

@@ -1,5 +1,6 @@
 import { useLocation } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard,
@@ -8,6 +9,7 @@ import {
   FlaskConical,
   Wifi,
   WifiOff,
+  Menu,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import api from '@/services/api';
@@ -35,7 +37,11 @@ const routeInfo: Record<string, { icon: React.ReactNode; title: string; descript
   },
 };
 
-export function TopBar() {
+interface TopBarProps {
+  onMobileMenuOpen?: () => void;
+}
+
+export function TopBar({ onMobileMenuOpen }: TopBarProps) {
   const location = useLocation();
   const [gatewayStatus, setGatewayStatus] = useState<'online' | 'offline' | 'checking'>('checking');
 
@@ -57,44 +63,53 @@ export function TopBar() {
   }, []);
 
   return (
-    <header className="h-16 border-b border-border bg-card/50 backdrop-blur-sm px-6 flex items-center justify-between">
-      {/* Breadcrumb / Page Info */}
+    <header className="h-16 border-b border-border bg-card/50 backdrop-blur-sm px-4 md:px-6 flex items-center justify-between">
+      {/* Left side: hamburger + page info */}
       <div className="flex items-center gap-3">
-        <div className="p-2 rounded-md bg-primary/10 text-primary">
+        {/* Mobile hamburger menu */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="md:hidden shrink-0"
+          onClick={onMobileMenuOpen}
+        >
+          <Menu className="h-5 w-5" />
+        </Button>
+
+        {/* Page Info */}
+        <div className="hidden sm:block p-2 rounded-md bg-primary/10 text-primary">
           {currentRoute.icon}
         </div>
-        <div>
-          <h1 className="text-lg font-semibold text-foreground">{currentRoute.title}</h1>
-          <p className="text-sm text-muted-foreground">{currentRoute.description}</p>
+        <div className="min-w-0">
+          <h1 className="text-lg font-semibold text-foreground truncate">{currentRoute.title}</h1>
+          <p className="text-sm text-muted-foreground hidden sm:block">{currentRoute.description}</p>
         </div>
       </div>
 
       {/* Gateway Status */}
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Gateway:</span>
-          <Badge
-            variant={gatewayStatus === 'online' ? 'success' : gatewayStatus === 'offline' ? 'destructive' : 'muted'}
-            className="flex items-center gap-1.5"
-          >
-            {gatewayStatus === 'online' ? (
-              <>
-                <Wifi className="h-3 w-3" />
-                <span>Online</span>
-                <span className={cn(
-                  'h-2 w-2 rounded-full bg-emerald-400 animate-pulse'
-                )} />
-              </>
-            ) : gatewayStatus === 'offline' ? (
-              <>
-                <WifiOff className="h-3 w-3" />
-                <span>Offline</span>
-              </>
-            ) : (
-              <span>Checking...</span>
-            )}
-          </Badge>
-        </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <span className="text-sm text-muted-foreground hidden sm:inline">Gateway:</span>
+        <Badge
+          variant={gatewayStatus === 'online' ? 'success' : gatewayStatus === 'offline' ? 'destructive' : 'muted'}
+          className="flex items-center gap-1.5"
+        >
+          {gatewayStatus === 'online' ? (
+            <>
+              <Wifi className="h-3 w-3" />
+              <span className="hidden xs:inline">Online</span>
+              <span className={cn(
+                'h-2 w-2 rounded-full bg-emerald-400 animate-pulse'
+              )} />
+            </>
+          ) : gatewayStatus === 'offline' ? (
+            <>
+              <WifiOff className="h-3 w-3" />
+              <span className="hidden xs:inline">Offline</span>
+            </>
+          ) : (
+            <span>...</span>
+          )}
+        </Badge>
       </div>
     </header>
   );

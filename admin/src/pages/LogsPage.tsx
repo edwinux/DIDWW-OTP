@@ -169,14 +169,14 @@ export default function LogsPage() {
       {/* Filters */}
       <Card>
         <CardContent className="p-4">
-          <div className="flex flex-wrap items-end gap-4">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-end gap-3 sm:gap-4">
             <div className="space-y-2">
               <Label htmlFor="status-filter">Status</Label>
               <Select
                 value={filters.status || 'all'}
                 onValueChange={(value) => handleFilterChange('status', value)}
               >
-                <SelectTrigger id="status-filter" className="w-[150px]">
+                <SelectTrigger id="status-filter" className="w-full sm:w-[150px]">
                   <SelectValue placeholder="All Statuses" />
                 </SelectTrigger>
                 <SelectContent>
@@ -189,13 +189,13 @@ export default function LogsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="phone-filter">Phone Number</Label>
+              <Label htmlFor="phone-filter">Phone</Label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="phone-filter"
-                  placeholder="Filter by phone..."
-                  className="pl-9 w-[180px]"
+                  placeholder="Filter..."
+                  className="pl-9 w-full sm:w-[150px]"
                   value={filters.phone}
                   onChange={(e) => handleFilterChange('phone', e.target.value)}
                 />
@@ -206,8 +206,8 @@ export default function LogsPage() {
               <Label htmlFor="id-filter">Request ID</Label>
               <Input
                 id="id-filter"
-                placeholder="Filter by ID..."
-                className="w-[180px] font-mono"
+                placeholder="Filter..."
+                className="w-full sm:w-[150px] font-mono"
                 value={filters.id}
                 onChange={(e) => handleFilterChange('id', e.target.value)}
               />
@@ -219,7 +219,7 @@ export default function LogsPage() {
                 value={pagination.limit.toString()}
                 onValueChange={(value) => setPagination(prev => ({ ...prev, limit: parseInt(value), page: 1 }))}
               >
-                <SelectTrigger id="limit-select" className="w-[100px]">
+                <SelectTrigger id="limit-select" className="w-full sm:w-[100px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -236,6 +236,7 @@ export default function LogsPage() {
               size="icon"
               onClick={fetchLogs}
               disabled={loading}
+              className="self-end"
             >
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </Button>
@@ -261,22 +262,22 @@ export default function LogsPage() {
       </Card>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          Showing {startRecord} to {endRecord} of {pagination.total} entries
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground order-2 sm:order-1">
+          Showing {startRecord}-{endRecord} of {pagination.total}
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 order-1 sm:order-2">
           <Button
             variant="outline"
             size="sm"
             disabled={pagination.page <= 1}
             onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
           >
-            <ChevronLeft className="h-4 w-4 mr-1" />
-            Previous
+            <ChevronLeft className="h-4 w-4 sm:mr-1" />
+            <span className="hidden sm:inline">Previous</span>
           </Button>
           <span className="text-sm text-muted-foreground px-2">
-            Page {pagination.page} of {pagination.totalPages}
+            {pagination.page} / {pagination.totalPages}
           </span>
           <Button
             variant="outline"
@@ -284,8 +285,8 @@ export default function LogsPage() {
             disabled={pagination.page >= pagination.totalPages}
             onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
           >
-            Next
-            <ChevronRight className="h-4 w-4 ml-1" />
+            <span className="hidden sm:inline">Next</span>
+            <ChevronRight className="h-4 w-4 sm:ml-1" />
           </Button>
         </div>
       </div>
