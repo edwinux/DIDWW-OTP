@@ -39,9 +39,9 @@ export function LogDetailDrawer({ log, onClose }: LogDetailDrawerProps) {
       {/* Drawer */}
       <div className={cn(
         'fixed right-0 top-0 h-full w-full max-w-lg bg-card border-l border-border z-50',
-        'animate-in slide-in-from-right duration-300'
+        'animate-in slide-in-from-right duration-300 overflow-hidden'
       )}>
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full min-w-0">
           {/* Header */}
           <div className="flex items-center justify-between p-6 border-b border-border">
             <div>
@@ -55,10 +55,10 @@ export function LogDetailDrawer({ log, onClose }: LogDetailDrawerProps) {
 
           {/* Content */}
           <ScrollArea className="flex-1">
-            <div className="p-6 space-y-6">
+            <div className="p-6 space-y-6 min-w-0">
               {/* Status & Risk Section */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-4 min-w-0">
+                <div className="space-y-2 min-w-0">
                   <p className="text-sm text-muted-foreground">Status</p>
                   <div className="flex items-center gap-2">
                     <StatusBadge status={log.status} />
@@ -100,10 +100,10 @@ export function LogDetailDrawer({ log, onClose }: LogDetailDrawerProps) {
                   <Phone className="h-4 w-4 text-muted-foreground" />
                   Contact Information
                 </h3>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
+                <div className="grid grid-cols-2 gap-4 text-sm min-w-0">
+                  <div className="min-w-0">
                     <p className="text-muted-foreground">Phone Number</p>
-                    <p className="font-mono font-medium">{log.phone}</p>
+                    <p className="font-mono font-medium truncate">{log.phone}</p>
                   </div>
                   <div>
                     <p className="text-muted-foreground">Channel</p>
@@ -129,9 +129,9 @@ export function LogDetailDrawer({ log, onClose }: LogDetailDrawerProps) {
                       <Building2 className="h-4 w-4 text-muted-foreground" />
                       Phone Metadata
                     </h3>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="grid grid-cols-2 gap-4 text-sm min-w-0">
                       {log.phone_number_type && (
-                        <div>
+                        <div className="min-w-0">
                           <p className="text-muted-foreground">Number Type</p>
                           <Badge variant="outline" className="mt-1 capitalize">
                             {log.phone_number_type.toLowerCase().replace('_', ' ')}
@@ -139,21 +139,21 @@ export function LogDetailDrawer({ log, onClose }: LogDetailDrawerProps) {
                         </div>
                       )}
                       {log.phone_carrier && (
-                        <div>
+                        <div className="min-w-0">
                           <p className="text-muted-foreground">Carrier</p>
-                          <p className="font-medium">{log.phone_carrier}</p>
+                          <p className="font-medium truncate">{log.phone_carrier}</p>
                         </div>
                       )}
                       {log.phone_geocoding && (
-                        <div>
+                        <div className="min-w-0">
                           <p className="text-muted-foreground">Location</p>
-                          <p className="font-medium">{log.phone_geocoding}</p>
+                          <p className="font-medium truncate">{log.phone_geocoding}</p>
                         </div>
                       )}
                       {log.phone_timezone && (
-                        <div>
+                        <div className="min-w-0">
                           <p className="text-muted-foreground">Timezone</p>
-                          <p className="font-mono text-xs">{log.phone_timezone}</p>
+                          <p className="font-mono text-xs truncate">{log.phone_timezone}</p>
                         </div>
                       )}
                     </div>
@@ -169,20 +169,20 @@ export function LogDetailDrawer({ log, onClose }: LogDetailDrawerProps) {
                   <MapPin className="h-4 w-4 text-muted-foreground" />
                   Location & Network
                 </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                  <div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm min-w-0">
+                  <div className="min-w-0">
                     <p className="text-muted-foreground">Country</p>
                     <p className="font-medium">{log.country_code || 'Unknown'}</p>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-muted-foreground">IP Address</p>
                     <p className="font-mono text-xs break-all">{log.ip_address || 'N/A'}</p>
                   </div>
-                  <div className="sm:col-span-2">
+                  <div className="sm:col-span-2 min-w-0">
                     <p className="text-muted-foreground">IP Subnet</p>
                     <p className="font-mono text-xs break-all">{log.ip_subnet || 'N/A'}</p>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-muted-foreground">ASN</p>
                     <p className="font-mono text-xs">{log.asn || 'N/A'}</p>
                   </div>
@@ -197,21 +197,21 @@ export function LogDetailDrawer({ log, onClose }: LogDetailDrawerProps) {
                   <Clock className="h-4 w-4 text-muted-foreground" />
                   Timing
                 </h3>
-                <div className="space-y-3 text-sm">
-                  <div className="flex flex-col sm:flex-row sm:justify-between gap-1">
-                    <span className="text-muted-foreground">Created</span>
-                    <span className="font-mono text-xs">{formatDate(log.created_at)}</span>
+                <div className="space-y-3 text-sm min-w-0">
+                  <div className="flex flex-col sm:flex-row sm:justify-between gap-1 min-w-0">
+                    <span className="text-muted-foreground shrink-0">Created</span>
+                    <span className="font-mono text-xs truncate">{formatDate(log.created_at)}</span>
                   </div>
                   {log.updated_at && (
-                    <div className="flex flex-col sm:flex-row sm:justify-between gap-1">
-                      <span className="text-muted-foreground">Updated</span>
-                      <span className="font-mono text-xs">{formatDate(log.updated_at)}</span>
+                    <div className="flex flex-col sm:flex-row sm:justify-between gap-1 min-w-0">
+                      <span className="text-muted-foreground shrink-0">Updated</span>
+                      <span className="font-mono text-xs truncate">{formatDate(log.updated_at)}</span>
                     </div>
                   )}
                   {log.expires_at && (
-                    <div className="flex flex-col sm:flex-row sm:justify-between gap-1">
-                      <span className="text-muted-foreground">Expires</span>
-                      <span className="font-mono text-xs">{formatDate(log.expires_at)}</span>
+                    <div className="flex flex-col sm:flex-row sm:justify-between gap-1 min-w-0">
+                      <span className="text-muted-foreground shrink-0">Expires</span>
+                      <span className="font-mono text-xs truncate">{formatDate(log.expires_at)}</span>
                     </div>
                   )}
                 </div>
@@ -226,28 +226,28 @@ export function LogDetailDrawer({ log, onClose }: LogDetailDrawerProps) {
                       <Phone className="h-4 w-4 text-muted-foreground" />
                       Call Details
                     </h3>
-                    <div className="space-y-3 text-sm">
+                    <div className="space-y-3 text-sm min-w-0">
                       {log.start_time && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Call Started</span>
-                          <span className="font-mono">{formatDate(log.start_time)}</span>
+                        <div className="flex flex-col sm:flex-row sm:justify-between gap-1 min-w-0">
+                          <span className="text-muted-foreground shrink-0">Call Started</span>
+                          <span className="font-mono text-xs truncate">{formatDate(log.start_time)}</span>
                         </div>
                       )}
                       {log.answer_time && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Answered</span>
-                          <span className="font-mono">{formatDate(log.answer_time)}</span>
+                        <div className="flex flex-col sm:flex-row sm:justify-between gap-1 min-w-0">
+                          <span className="text-muted-foreground shrink-0">Answered</span>
+                          <span className="font-mono text-xs truncate">{formatDate(log.answer_time)}</span>
                         </div>
                       )}
                       {log.end_time && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Call Ended</span>
-                          <span className="font-mono">{formatDate(log.end_time)}</span>
+                        <div className="flex flex-col sm:flex-row sm:justify-between gap-1 min-w-0">
+                          <span className="text-muted-foreground shrink-0">Call Ended</span>
+                          <span className="font-mono text-xs truncate">{formatDate(log.end_time)}</span>
                         </div>
                       )}
                       {log.answer_time && log.end_time && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Duration</span>
+                        <div className="flex flex-col sm:flex-row sm:justify-between gap-1 min-w-0">
+                          <span className="text-muted-foreground shrink-0">Duration</span>
                           <span className="font-mono font-medium text-primary">
                             {((log.end_time - log.answer_time) / 1000).toFixed(1)}s
                           </span>
@@ -262,13 +262,13 @@ export function LogDetailDrawer({ log, onClose }: LogDetailDrawerProps) {
               {log.error_message && (
                 <>
                   <Separator />
-                  <div className="space-y-2">
+                  <div className="space-y-2 min-w-0">
                     <h3 className="text-sm font-medium text-destructive flex items-center gap-2">
                       <Shield className="h-4 w-4" />
                       Error Details
                     </h3>
-                    <div className="p-3 rounded-md bg-destructive/10 border border-destructive/20">
-                      <p className="text-sm text-destructive font-mono">{log.error_message}</p>
+                    <div className="p-3 rounded-md bg-destructive/10 border border-destructive/20 min-w-0">
+                      <p className="text-sm text-destructive font-mono break-all">{log.error_message}</p>
                     </div>
                   </div>
                 </>
@@ -276,12 +276,12 @@ export function LogDetailDrawer({ log, onClose }: LogDetailDrawerProps) {
 
               {/* Raw Data */}
               <Separator />
-              <div className="space-y-2">
+              <div className="space-y-2 min-w-0">
                 <h3 className="text-sm font-medium flex items-center gap-2">
                   <Globe className="h-4 w-4 text-muted-foreground" />
                   Raw Data
                 </h3>
-                <pre className="p-3 rounded-md bg-muted text-xs font-mono overflow-auto max-h-48">
+                <pre className="p-3 rounded-md bg-muted text-xs font-mono overflow-x-auto overflow-y-auto max-h-48 whitespace-pre">
                   {JSON.stringify(log, null, 2)}
                 </pre>
               </div>
