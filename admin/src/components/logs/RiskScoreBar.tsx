@@ -32,7 +32,7 @@ export function RiskScoreBar({ score, showLabel = true }: RiskScoreBarProps) {
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <div className="flex items-center gap-2 min-w-[100px]">
+          <div className="flex items-center gap-2 w-full">
             <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
               <div
                 className={cn('h-full rounded-full transition-all', getColor(score))}
