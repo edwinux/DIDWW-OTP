@@ -58,13 +58,12 @@ const columns: ColumnDef<OtpRequest>[] = [
   {
     accessorKey: 'auth_status',
     header: 'Auth',
-    meta: { className: 'hidden md:table-cell' },
     cell: ({ row }) => {
       const authStatus = row.original.auth_status;
       if (!authStatus) return <span className="text-muted-foreground text-xs">-</span>;
       return (
         <Badge variant={authStatus === 'verified' ? 'default' : 'secondary'} className="text-xs">
-          {authStatus === 'verified' ? 'Verified' : 'Wrong'}
+          {authStatus === 'verified' ? '✓' : '✗'}
         </Badge>
       );
     },

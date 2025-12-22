@@ -169,22 +169,22 @@ export function LogDetailDrawer({ log, onClose }: LogDetailDrawerProps) {
                   <MapPin className="h-4 w-4 text-muted-foreground" />
                   Location & Network
                 </h3>
-                <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                   <div>
                     <p className="text-muted-foreground">Country</p>
                     <p className="font-medium">{log.country_code || 'Unknown'}</p>
                   </div>
                   <div>
                     <p className="text-muted-foreground">IP Address</p>
-                    <p className="font-mono">{log.ip_address || 'N/A'}</p>
+                    <p className="font-mono text-xs break-all">{log.ip_address || 'N/A'}</p>
                   </div>
-                  <div>
+                  <div className="sm:col-span-2">
                     <p className="text-muted-foreground">IP Subnet</p>
-                    <p className="font-mono">{log.ip_subnet || 'N/A'}</p>
+                    <p className="font-mono text-xs break-all">{log.ip_subnet || 'N/A'}</p>
                   </div>
                   <div>
                     <p className="text-muted-foreground">ASN</p>
-                    <p className="font-mono">{log.asn || 'N/A'}</p>
+                    <p className="font-mono text-xs">{log.asn || 'N/A'}</p>
                   </div>
                 </div>
               </div>
@@ -198,20 +198,20 @@ export function LogDetailDrawer({ log, onClose }: LogDetailDrawerProps) {
                   Timing
                 </h3>
                 <div className="space-y-3 text-sm">
-                  <div className="flex justify-between">
+                  <div className="flex flex-col sm:flex-row sm:justify-between gap-1">
                     <span className="text-muted-foreground">Created</span>
-                    <span className="font-mono">{formatDate(log.created_at)}</span>
+                    <span className="font-mono text-xs">{formatDate(log.created_at)}</span>
                   </div>
                   {log.updated_at && (
-                    <div className="flex justify-between">
+                    <div className="flex flex-col sm:flex-row sm:justify-between gap-1">
                       <span className="text-muted-foreground">Updated</span>
-                      <span className="font-mono">{formatDate(log.updated_at)}</span>
+                      <span className="font-mono text-xs">{formatDate(log.updated_at)}</span>
                     </div>
                   )}
                   {log.expires_at && (
-                    <div className="flex justify-between">
+                    <div className="flex flex-col sm:flex-row sm:justify-between gap-1">
                       <span className="text-muted-foreground">Expires</span>
-                      <span className="font-mono">{formatDate(log.expires_at)}</span>
+                      <span className="font-mono text-xs">{formatDate(log.expires_at)}</span>
                     </div>
                   )}
                 </div>
