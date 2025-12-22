@@ -19,19 +19,10 @@ import { Badge } from '@/components/ui/badge';
 
 const columns: ColumnDef<OtpRequest>[] = [
   {
-    accessorKey: 'id',
-    header: 'ID',
-    cell: ({ row }) => (
-      <span className="font-mono text-xs text-muted-foreground">
-        {row.original.id.substring(0, 8)}...
-      </span>
-    ),
-  },
-  {
     accessorKey: 'phone',
     header: 'Phone',
     cell: ({ row }) => (
-      <span className="font-mono">{row.original.phone}</span>
+      <span className="font-mono text-sm">{row.original.phone}</span>
     ),
   },
   {
@@ -51,69 +42,54 @@ const columns: ColumnDef<OtpRequest>[] = [
     ),
   },
   {
+    accessorKey: 'channel',
+    header: 'Ch',
+    meta: { className: 'hidden sm:table-cell' },
+    cell: ({ row }) => {
+      const channel = row.original.channel;
+      if (!channel) return <span className="text-muted-foreground">-</span>;
+      return channel === 'sms' ? (
+        <MessageSquare className="h-4 w-4 text-primary" />
+      ) : (
+        <Phone className="h-4 w-4 text-violet-400" />
+      );
+    },
+  },
+  {
     accessorKey: 'auth_status',
     header: 'Auth',
+    meta: { className: 'hidden md:table-cell' },
     cell: ({ row }) => {
       const authStatus = row.original.auth_status;
       if (!authStatus) return <span className="text-muted-foreground text-xs">-</span>;
       return (
         <Badge variant={authStatus === 'verified' ? 'default' : 'secondary'} className="text-xs">
-          {authStatus === 'verified' ? 'Verified' : 'Wrong Code'}
+          {authStatus === 'verified' ? 'Verified' : 'Wrong'}
         </Badge>
       );
     },
   },
   {
-    accessorKey: 'channel',
-    header: 'Channel',
-    cell: ({ row }) => {
-      const channel = row.original.channel;
-      if (!channel) return <span className="text-muted-foreground">-</span>;
-      return (
-        <div className="flex items-center gap-1.5 text-sm">
-          {channel === 'sms' ? (
-            <MessageSquare className="h-3.5 w-3.5 text-primary" />
-          ) : (
-            <Phone className="h-3.5 w-3.5 text-violet-400" />
-          )}
-          <span className="capitalize">{channel}</span>
-        </div>
-      );
-    },
-  },
-  {
     accessorKey: 'fraud_score',
-    header: 'Risk Score',
+    header: 'Risk',
+    meta: { className: 'hidden lg:table-cell' },
     cell: ({ row }) => <RiskScoreBar score={row.original.fraud_score} />,
   },
   {
     accessorKey: 'country_code',
     header: 'Country',
+    meta: { className: 'hidden lg:table-cell' },
     cell: ({ row }) => (
       <span className="text-sm">{row.original.country_code || '-'}</span>
     ),
   },
   {
-    accessorKey: 'cost',
-    header: 'Cost',
-    cell: ({ row }) => {
-      const smsCost = row.original.sms_cost_units;
-      const voiceCost = row.original.voice_cost_units;
-      const cost = smsCost ?? voiceCost;
-      if (cost === null || cost === undefined) {
-        return <span className="text-muted-foreground text-xs">-</span>;
-      }
-      // Convert from 1/10000 dollars to USD
-      const costUsd = cost / 10000;
-      return <span className="font-mono text-xs">${costUsd.toFixed(4)}</span>;
-    },
-  },
-  {
     accessorKey: 'created_at',
     header: 'Created',
+    meta: { className: 'hidden md:table-cell' },
     cell: ({ row }) => (
       <span className="font-mono text-xs text-muted-foreground">
-        {new Date(row.original.created_at).toLocaleString()}
+        {new Date(row.original.created_at).toLocaleTimeString()}
       </span>
     ),
   },
