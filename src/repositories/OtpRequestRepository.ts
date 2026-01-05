@@ -62,6 +62,8 @@ export interface OtpRequest {
   phone_carrier: string | null;
   phone_geocoding: string | null;
   phone_timezone: string | null;
+  // V9: Failure classification for rate limit exclusion
+  failure_category: 'carrier' | 'user' | 'fraud' | null;
 }
 
 /**
@@ -219,6 +221,24 @@ export class OtpRequestRepository {
   }
 
   /**
+   * Update failure category for rate limit exclusion
+   *
+   * @param id - OTP request ID
+   * @param category - Failure category:
+   *   - 'carrier': Infrastructure/routing failures (excluded from rate limits)
+   *   - 'user': User-side failures like busy/no-answer (counted in rate limits)
+   *   - 'fraud': Shadow-banned requests (excluded from rate limits)
+   */
+  updateFailureCategory(id: string, category: 'carrier' | 'user' | 'fraud'): void {
+    const stmt = this.db.prepare(`
+      UPDATE otp_requests
+      SET failure_category = ?, updated_at = ?
+      WHERE id = ?
+    `);
+    stmt.run(category, Date.now(), id);
+  }
+
+  /**
    * Update voice cost and timing from CDR
    */
   updateVoiceCost(
@@ -289,12 +309,21 @@ export class OtpRequestRepository {
 
   /**
    * Count requests by IP subnet in time window
+   *
+   * Excludes:
+   * - Carrier failures (failure_category = 'carrier') - not user's fault
+   * - Shadow-banned requests (failure_category = 'fraud') - already handled
+   *
+   * Includes:
+   * - User failures (failure_category = 'user') - legitimate attempts
+   * - Unclassified (failure_category IS NULL) - pending/successful
    */
   countByIpSubnet(ipSubnet: string, windowMinutes: number): number {
     const cutoff = Date.now() - windowMinutes * 60 * 1000;
     const stmt = this.db.prepare(`
       SELECT COUNT(*) as count FROM otp_requests
       WHERE ip_subnet = ? AND created_at > ?
+        AND (failure_category IS NULL OR failure_category = 'user')
     `);
     const result = stmt.get(ipSubnet, cutoff) as { count: number };
     return result.count;
@@ -302,12 +331,21 @@ export class OtpRequestRepository {
 
   /**
    * Count requests by phone in time window
+   *
+   * Excludes:
+   * - Carrier failures (failure_category = 'carrier') - not user's fault
+   * - Shadow-banned requests (failure_category = 'fraud') - already handled
+   *
+   * Includes:
+   * - User failures (failure_category = 'user') - legitimate attempts
+   * - Unclassified (failure_category IS NULL) - pending/successful
    */
   countByPhone(phone: string, windowMinutes: number): number {
     const cutoff = Date.now() - windowMinutes * 60 * 1000;
     const stmt = this.db.prepare(`
       SELECT COUNT(*) as count FROM otp_requests
       WHERE phone = ? AND created_at > ?
+        AND (failure_category IS NULL OR failure_category = 'user')
     `);
     const result = stmt.get(phone, cutoff) as { count: number };
     return result.count;

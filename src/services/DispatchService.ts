@@ -17,6 +17,7 @@ import { OtpRequestRepository, type OtpStatus } from '../repositories/OtpRequest
 import { FraudRulesRepository } from '../repositories/FraudRulesRepository.js';
 import { FraudSavingsRepository } from '../repositories/FraudSavingsRepository.js';
 import { getWebSocketServer } from '../admin/websocket.js';
+import { classifyShadowBan } from '../utils/failureClassifier.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -155,6 +156,9 @@ export class DispatchService {
         score: fraudResult.score,
         reasons: fraudResult.reasons,
       });
+
+      // Mark as fraud for rate limit exclusion
+      this.otpRepo.updateFailureCategory(requestId, classifyShadowBan());
 
       // Record fraud savings (estimated cost we avoided)
       this.fraudSavingsRepo.record(
