@@ -10,6 +10,8 @@ import { getAmiClient, type AmiHangupEvent, type AmiNewchannelEvent, type AmiSip
 import { emitOtpEvent } from '../services/OtpEventService.js';
 import { logger } from '../utils/logger.js';
 import { getCallTracker } from '../services/CallTrackerService.js';
+import { classifyVoiceFailure, classifySipFailure } from '../utils/failureClassifier.js';
+import { OtpRequestRepository } from '../repositories/OtpRequestRepository.js';
 
 /**
  * SIP response code descriptions (from DIDWW documentation)
@@ -205,6 +207,22 @@ function handleHangup(event: AmiHangupEvent): void {
         cause,
         causeText: description,
         ringDurationMs: result?.durations.ringDurationMs,
+      });
+    }
+
+    // Classify failure for rate limit exclusion
+    // SIP codes take precedence over Q.850 when available
+    const failureCategory = sipInfo?.sipCode
+      ? classifySipFailure(sipInfo.sipCode)
+      : classifyVoiceFailure(cause);
+    if (failureCategory) {
+      const otpRepo = new OtpRequestRepository();
+      otpRepo.updateFailureCategory(requestId, failureCategory);
+      logger.info('Voice failure classified', {
+        requestId,
+        q850Cause: cause,
+        sipCode: sipInfo?.sipCode,
+        failureCategory,
       });
     }
 

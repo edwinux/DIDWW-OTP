@@ -11,6 +11,7 @@ import { OtpRequestRepository } from '../repositories/OtpRequestRepository.js';
 import { emitOtpEvent } from '../services/OtpEventService.js';
 import { SmsCost } from '../domain/SmsCost.js';
 import { getCostPredictionService } from '../services/CostPredictionService.js';
+import { classifySmsFailure } from '../utils/failureClassifier.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -212,6 +213,20 @@ export class WebhookController {
 
       // Add original status for debugging
       eventData.didww_status = data.attributes.status;
+
+      // Classify failure for rate limit exclusion
+      if (eventType === 'failed') {
+        const errorCode = typeof eventData.error_code === 'number' ? eventData.error_code : undefined;
+        const failureCategory = classifySmsFailure(errorCode);
+        if (failureCategory) {
+          otpRepo.updateFailureCategory(otpRequest.id, failureCategory);
+          logger.info('SMS failure classified', {
+            requestId: otpRequest.id,
+            errorCode,
+            failureCategory,
+          });
+        }
+      }
 
       // Calculate and store SMS cost if price and fragments are available
       const smsCost = SmsCost.fromDidww(data.attributes.price, data.attributes.fragments_sent);
