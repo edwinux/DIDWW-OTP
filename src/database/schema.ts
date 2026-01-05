@@ -10,7 +10,7 @@ import { logger } from '../utils/logger.js';
 /**
  * Schema version for migration tracking
  */
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 
 /**
  * SQL schema definitions
@@ -356,6 +356,28 @@ ALTER TABLE cdr_records ADD COLUMN src_geocoding TEXT;
 `;
 
 /**
+ * V9 Migration: Add failure_category column for rate limit exclusion
+ *
+ * Carrier failures (routing errors, network issues) should NOT count
+ * toward rate limits - users shouldn't be penalized for infrastructure issues.
+ *
+ * Categories:
+ * - 'carrier': Infrastructure/routing failures (excluded from rate limits)
+ * - 'user': User-side failures like busy/no-answer (counted in rate limits)
+ * - 'fraud': Shadow-banned requests (excluded from rate limits)
+ * - NULL: Not classified or successful (counted in rate limits)
+ */
+const V9_MIGRATION_SQL = `
+-- Add failure_category column for carrier vs user failure classification
+ALTER TABLE otp_requests ADD COLUMN failure_category TEXT CHECK(failure_category IN ('carrier', 'user', 'fraud'));
+`;
+
+const V9_INDEX_SQL = `
+-- Index for efficient rate limit queries that filter by failure_category
+CREATE INDEX IF NOT EXISTS idx_otp_requests_failure_category ON otp_requests(failure_category, created_at);
+`;
+
+/**
  * Run database migrations
  */
 export function runMigrations(): void {
@@ -504,6 +526,29 @@ export function runMigrations(): void {
         if (!msg.includes('duplicate column')) {
           throw err;
         }
+      }
+    }
+  }
+
+  // Run V9 migration if upgrading from V8 or earlier
+  if (currentVersion < 9) {
+    logger.info('Applying V9 migration...', { from: currentVersion, to: 9 });
+    try {
+      db.exec(V9_MIGRATION_SQL);
+    } catch (err) {
+      // Column might already exist
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('duplicate column')) {
+        throw err;
+      }
+    }
+    try {
+      db.exec(V9_INDEX_SQL);
+    } catch (err) {
+      // Index might already exist
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('already exists')) {
+        throw err;
       }
     }
   }
