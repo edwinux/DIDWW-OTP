@@ -49,6 +49,237 @@ Access the admin panel at `http://your_server_ip/`
 
 ---
 
+## Docker Compose Deployment (Recommended)
+
+Create a `docker-compose.yml`:
+
+```yaml
+services:
+  didww-otp:
+    image: ghcr.io/edwinux/didww-otp:latest
+    container_name: didww-otp
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      # Admin UI (container:80 -> host:8080) - proxy via nginx
+      - "127.0.0.1:8080:80"
+      # API (container:8080 -> host:8081) - proxy via nginx
+      - "127.0.0.1:8081:8080"
+      # SIP signaling (direct, cannot proxy)
+      - "5060:5060/udp"
+      # RTP media (direct, cannot proxy)
+      - "10000-10020:10000-10020/udp"
+    volumes:
+      # CRITICAL: Mount to /data (NOT /app/data)
+      # Database is stored at /data/otp.db
+      - didww-data:/data
+
+volumes:
+  didww-data:
+```
+
+Create a `.env` file:
+
+```bash
+# ===========================================
+# REQUIRED - DIDWW SIP Credentials
+# ===========================================
+DIDWW_SIP_HOST=nyc.us.out.didww.com
+DIDWW_USERNAME=your_sip_username
+DIDWW_PASSWORD=your_sip_password
+DIDWW_DID_NUMBER=+1234567890
+
+# ===========================================
+# REQUIRED - Server Configuration
+# ===========================================
+PUBLIC_IP=your.server.public.ip
+API_SECRET=generate_with_openssl_rand_hex_32
+
+# ===========================================
+# Admin Dashboard
+# ===========================================
+ADMIN_ENABLED=true
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=your_secure_password_min_8_chars
+ADMIN_SESSION_SECRET=generate_with_openssl_rand_hex_32
+
+# ===========================================
+# SMS Configuration (DIDWW SMS API)
+# ===========================================
+SMS_ENABLED=true
+SMS_USERNAME=your_sms_api_username
+SMS_PASSWORD=your_sms_api_password
+SMS_MESSAGE_TEMPLATE=Your verification code is: {code}
+
+# ===========================================
+# CDR Streaming (for billing/cost tracking)
+# ===========================================
+CDR_ENABLED=true
+# CDR_TARGET_TRUNK_ID=optional_trunk_uuid
+```
+
+Start the service:
+
+```bash
+docker compose up -d
+```
+
+> **Important:** Use `docker compose down && docker compose up -d` to reload `.env` changes. A simple `docker compose restart` does NOT reload environment variables.
+
+---
+
+## Port Architecture
+
+| Service | Container Port | Host Port (recommended) | Purpose |
+|---------|---------------|------------------------|---------|
+| Admin UI | 80 | 8080 (localhost only) | Web dashboard, WebSocket `/admin/ws` |
+| API | 8080 | 8081 (localhost only) | REST API endpoints |
+| SIP | 5060/udp | 5060 (public) | SIP signaling |
+| RTP | 10000-10020/udp | 10000-10020 (public) | Voice media |
+
+---
+
+## DIDWW Webhook Configuration
+
+Configure these URLs in your DIDWW console:
+
+| Webhook | URL | Purpose |
+|---------|-----|---------|
+| SMS Delivery Reports | `https://your-domain/webhooks/dlr` | SMS delivery status updates |
+| CDR Streaming | `https://your-domain/webhooks/cdr` | Voice call billing records |
+
+---
+
+## Nginx Reverse Proxy with SSL
+
+For production deployments behind nginx with SSL:
+
+```nginx
+upstream didww_admin {
+    server 127.0.0.1:8080;  # Admin UI
+}
+
+upstream didww_api {
+    server 127.0.0.1:8081;  # API
+}
+
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name your-domain.com;
+
+    ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+
+    # API endpoints -> API upstream (port 8081)
+    location /dispatch {
+        proxy_pass http://didww_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /health {
+        proxy_pass http://didww_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /webhooks {
+        proxy_pass http://didww_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Admin WebSocket -> Admin upstream (port 8080)
+    location /admin/ws {
+        proxy_pass http://didww_admin;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400;
+    }
+
+    # Admin UI (everything else) -> Admin upstream (port 8080)
+    location / {
+        proxy_pass http://didww_admin;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+### Cloudflare Configuration
+
+If using Cloudflare:
+
+1. **SSL Mode:** Full (Strict) - requires valid SSL certificate on origin server
+2. **Proxied (orange cloud):** Only for HTTP/HTTPS traffic (ports 80/443)
+3. **DNS-only (gray cloud):** Required for SIP/RTP traffic (Cloudflare cannot proxy UDP)
+
+**Firewall ports to open:**
+| Port | Protocol | Purpose | Cloudflare Compatible |
+|------|----------|---------|----------------------|
+| 80 | TCP | HTTP/Let's Encrypt | Yes |
+| 443 | TCP | HTTPS | Yes |
+| 5060 | UDP | SIP signaling | No (direct only) |
+| 10000-10020 | UDP | RTP media | No (direct only) |
+
+For Cloudflare real IP detection, add to nginx:
+```nginx
+# Cloudflare IP ranges
+set_real_ip_from 103.21.244.0/22;
+set_real_ip_from 103.22.200.0/22;
+set_real_ip_from 103.31.4.0/22;
+set_real_ip_from 104.16.0.0/13;
+set_real_ip_from 104.24.0.0/14;
+set_real_ip_from 108.162.192.0/18;
+set_real_ip_from 131.0.72.0/22;
+set_real_ip_from 141.101.64.0/18;
+set_real_ip_from 162.158.0.0/15;
+set_real_ip_from 172.64.0.0/13;
+set_real_ip_from 173.245.48.0/20;
+set_real_ip_from 188.114.96.0/20;
+set_real_ip_from 190.93.240.0/20;
+set_real_ip_from 197.234.240.0/22;
+set_real_ip_from 198.41.128.0/17;
+real_ip_header CF-Connecting-IP;
+```
+
+---
+
 ## API Reference
 
 ### Authentication
@@ -332,6 +563,15 @@ Access at `http://your-server/` (port 80 by default).
 | `CHANNELS_DEFAULT` | `sms,voice` | Default channels if not specified |
 | `CHANNELS_ENABLE_FAILOVER` | `true` | Auto-failover to next channel on failure |
 
+### CDR Streaming
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CDR_ENABLED` | `false` | Enable CDR webhook endpoint for billing |
+| `CDR_TARGET_TRUNK_ID` | - | Filter CDRs by trunk UUID (optional) |
+| `CDR_LEARNING_INTERVAL_MINUTES` | `60` | Rate learning interval |
+| `CDR_LEARNING_BATCH_SIZE` | `1000` | Batch size for rate learning |
+
 ### Network Configuration
 
 | Variable | Default | Description |
@@ -437,6 +677,51 @@ docker compose up --build
   - At least one DID for caller ID
 - Server with public IP address
 - Docker (recommended) or Node.js 20+
+
+---
+
+## Troubleshooting
+
+### "Admin UI is disabled" in logs
+
+- Ensure `ADMIN_ENABLED=true` (not `ADMIN_UI_ENABLED`)
+- The password must be at least 8 characters
+- Requires full container recreation: `docker compose down && docker compose up -d`
+
+### Data/settings lost after restart
+
+- Volume must mount to `/data` not `/app/data`
+- Database is stored at `/data/otp.db`
+- Check volume mount: `docker exec didww-otp ls -la /data/`
+
+### CDR webhook not receiving data
+
+- Set `CDR_ENABLED=true` in `.env`
+- Verify in logs: should show "CDR webhook endpoint registered"
+- Configure webhook URL in DIDWW console: `https://your-domain/webhooks/cdr`
+
+### Environment variables not updating
+
+- `docker compose restart` does NOT reload `.env` files
+- Must use: `docker compose down && docker compose up -d`
+- Verify with: `docker exec didww-otp env | grep VARIABLE_NAME`
+
+### SIP registration failing
+
+- Ensure `PUBLIC_IP` is set to your server's actual public IP
+- Check firewall allows UDP 5060 and 10000-10020
+- SIP/RTP cannot go through Cloudflare proxy (must be DNS-only)
+
+### WebSocket not connecting
+
+- Nginx must have `proxy_set_header Upgrade` and `Connection "upgrade"` for `/admin/ws`
+- Check `proxy_read_timeout` is set high (e.g., 86400 for 24h)
+
+### SMS not sending
+
+- SMS uses separate DIDWW API credentials (not SIP credentials)
+- Set both `SMS_USERNAME` and `SMS_PASSWORD`
+- Verify `SMS_ENABLED=true`
 
 ---
 
