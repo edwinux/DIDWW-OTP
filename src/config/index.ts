@@ -120,6 +120,12 @@ const configSchema = z.object({
     // (X-Webhook-Token header or ?token= query). When unset, callbacks are
     // accepted unauthenticated (a per-request warning is logged).
     inboundSecret: z.string().optional(),
+    // Comma-separated source-IP allowlist (CIDR / bare IP, IPv4 + IPv6) for INBOUND
+    // callbacks. When non-empty, a callback is also accepted if its source IP matches
+    // (in addition to / instead of a valid token). Empty (default) = no IP check.
+    // NOTE: set this to the IPs the gateway actually SEES as the source. Behind a
+    // proxy/CDN (e.g. Cloudflare) that is the proxy's egress range, not DIDWW's.
+    inboundIpAllowlist: z.string().default(''),
   }),
 
   // Admin UI configuration
@@ -249,6 +255,7 @@ function parseEnvVars(): Record<string, unknown> {
       timeout: process.env.WEBHOOK_TIMEOUT,
       maxRetries: process.env.WEBHOOK_MAX_RETRIES,
       inboundSecret: process.env.WEBHOOK_INBOUND_SECRET,
+      inboundIpAllowlist: process.env.WEBHOOK_INBOUND_IP_ALLOWLIST,
     },
     admin: {
       enabled: process.env.ADMIN_ENABLED,

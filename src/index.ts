@@ -36,6 +36,14 @@ async function main(): Promise<void> {
       fraudEnabled: config.fraud.enabled,
     });
 
+    // L4: warn loudly if the internal ARI password is left at its insecure default.
+    if (!process.env.ARI_PASSWORD) {
+      logger.warn(
+        'ARI_PASSWORD not set - using the insecure built-in default. ' +
+          'Set ARI_PASSWORD (and configure Asterisk ari.conf to match) in production.'
+      );
+    }
+
     // Initialize database
     logger.info('Initializing database...', { path: config.database.path });
     dbManager.connect(config.database.path);
@@ -124,8 +132,11 @@ async function main(): Promise<void> {
       }
     );
 
-    // Set up graceful shutdown
+    // Set up graceful shutdown (idempotent - a repeated signal must not re-run teardown)
+    let isShuttingDown = false;
     const shutdown = async (signal: string) => {
+      if (isShuttingDown) return;
+      isShuttingDown = true;
       logger.info(`Received ${signal}, shutting down...`);
       await ariManager.disconnect();
       if (config.ami.enabled) {
@@ -140,6 +151,18 @@ async function main(): Promise<void> {
     };
     process.on('SIGTERM', () => shutdown('SIGTERM'));
     process.on('SIGINT', () => shutdown('SIGINT'));
+
+    // Fail fast on otherwise-unhandled async errors instead of running on in an
+    // undefined state; the container/health-check will restart cleanly.
+    process.on('unhandledRejection', (reason) => {
+      const msg = reason instanceof Error ? reason.stack || reason.message : String(reason);
+      logger.error('Unhandled promise rejection - exiting', { error: msg });
+      process.exit(1);
+    });
+    process.on('uncaughtException', (err) => {
+      logger.error('Uncaught exception - exiting', { error: err.stack || err.message });
+      process.exit(1);
+    });
 
     // Register Stasis event handlers on every (re)connect. Registering via the
     // callback (instead of once on the returned client) ensures handlers survive a
@@ -194,8 +217,12 @@ async function main(): Promise<void> {
     const app = createServer(dispatchService, { cdrController });
     const port = config.api.port;
 
-    app.listen(port, () => {
+    const httpServer = app.listen(port, () => {
       logger.info(`HTTP server listening on port ${port}`);
+    });
+    httpServer.on('error', (err: NodeJS.ErrnoException) => {
+      logger.error('HTTP server failed to start', { port, code: err.code, error: err.message });
+      process.exit(1);
     });
 
     // Start admin server if enabled

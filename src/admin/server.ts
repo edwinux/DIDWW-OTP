@@ -97,6 +97,32 @@ export function createAdminServer(dispatchService: DispatchService) {
       res.status(204).end();
       return;
     }
+
+    // CSRF defense-in-depth for state-changing requests. The admin SPA is served
+    // same-origin (Origin === Host); a malicious site's cross-origin fetch carries
+    // its own Origin and is rejected here even though it would ride the session
+    // cookie. Requests without an Origin header (non-browser clients) are not a CSRF
+    // vector and pass. Complements the cookie's sameSite=lax.
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && origin) {
+      let originHost: string | null = null;
+      try {
+        originHost = new URL(origin).host;
+      } catch {
+        originHost = null;
+      }
+      const sameOrigin = originHost !== null && originHost === req.headers.host;
+      if (!sameOrigin && !allowedOrigins.has(origin)) {
+        logger.warn('Admin request blocked: cross-origin state change', {
+          origin,
+          host: req.headers.host,
+          method: req.method,
+          path: req.path,
+        });
+        res.status(403).json({ error: 'forbidden', message: 'Cross-origin request blocked' });
+        return;
+      }
+    }
+
     next();
   });
 
@@ -157,5 +183,13 @@ export function startAdminServer(dispatchService: DispatchService): void {
 
   httpServer.listen(config.admin.port, () => {
     logger.info(`Admin UI server listening on port ${config.admin.port}`);
+  });
+  httpServer.on('error', (err: NodeJS.ErrnoException) => {
+    // Admin is optional - log loudly but don't take down the main gateway.
+    logger.error('Admin UI server failed to start', {
+      port: config.admin.port,
+      code: err.code,
+      error: err.message,
+    });
   });
 }

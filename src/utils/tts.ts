@@ -4,13 +4,16 @@
  * Generates audio files from text using PicoTTS (SVOX Pico) for Asterisk playback.
  */
 
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { existsSync, mkdirSync } from 'fs';
+import { rm } from 'fs/promises';
 import { createHash } from 'crypto';
 import { logger } from './logger.js';
 
-const execAsync = promisify(exec);
+// execFile (not exec) runs the binary directly with an argv array — no shell is
+// spawned, so text is never interpreted for $(...) / backticks / quoting.
+const execFileAsync = promisify(execFile);
 
 /** TTS output directory for Asterisk */
 const TTS_DIR = '/var/lib/asterisk/sounds/tts';
@@ -62,27 +65,20 @@ export async function generateTts(text: string, speed: string = 'medium'): Promi
   const tempoFactor = SPEED_MAP[speed] || SPEED_MAP.medium;
 
   try {
-    // Generate WAV with PicoTTS
-    // -l en-US: US English voice
-    // -w: output WAV file
-    const escapedText = text.replace(/"/g, '\\"');
-    await execAsync(
-      `pico2wave -l en-US -w "${wavPath}" "${escapedText}"`
-    );
+    // Generate WAV with PicoTTS. Args are passed as an argv array, so `text` is
+    // never shell-interpreted regardless of its content.
+    // -l en-US: US English voice  -w: output WAV file
+    await execFileAsync('pico2wave', ['-l', 'en-US', '-w', wavPath, text]);
 
-    // Convert to Asterisk's signed linear 16kHz format with speed adjustment
+    // Convert to Asterisk's signed linear 16kHz format with speed adjustment.
     // tempo: adjust speed without changing pitch
-    // -r 16000: 16kHz sample rate
-    // -c 1: mono
-    // -b 16: 16-bit
-    // -t raw: raw PCM output
-    const tempoEffect = tempoFactor !== 1.0 ? `tempo ${tempoFactor}` : '';
-    await execAsync(
-      `sox "${wavPath}" -r 16000 -c 1 -b 16 -t raw "${slinPath}" ${tempoEffect}`
-    );
+    // -r 16000: 16kHz sample rate  -c 1: mono  -b 16: 16-bit  -t raw: raw PCM output
+    const soxArgs = ['-r', '16000', '-c', '1', '-b', '16', '-t', 'raw', slinPath];
+    const tempoArgs = tempoFactor !== 1.0 ? ['tempo', String(tempoFactor)] : [];
+    await execFileAsync('sox', [wavPath, ...soxArgs, ...tempoArgs]);
 
     // Clean up WAV file
-    await execAsync(`rm -f "${wavPath}"`);
+    await rm(wavPath, { force: true });
 
     logger.info('TTS audio generated', { filename, text: text.slice(0, 50) });
     return `tts/${filename}`;

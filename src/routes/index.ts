@@ -13,6 +13,7 @@ import { isDbConnected } from '../database/index.js';
 import { isAriConnected } from '../ari/client.js';
 import { getConfig } from '../config/index.js';
 import { safeCompare } from '../utils/secureCompare.js';
+import { ipInAnyCidr } from '../utils/cidr.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -41,36 +42,60 @@ function authMiddleware(req: Request, res: Response, next: NextFunction): void {
 /**
  * Auth middleware for INBOUND provider callbacks (DIDWW DLR / CDR).
  *
- * When WEBHOOK_INBOUND_SECRET is configured, requires a matching token supplied
- * via the X-Webhook-Token header or `?token=` query string (constant-time compare).
- * When it is not configured, callbacks are accepted but a warning is logged so the
- * operator knows the endpoints are unauthenticated.
+ * A callback is accepted if EITHER:
+ *   - WEBHOOK_INBOUND_SECRET is set and a matching token is supplied via the
+ *     X-Webhook-Token header or `?token=` query string (constant-time compare), OR
+ *   - WEBHOOK_INBOUND_IP_ALLOWLIST is set and the source IP (`req.ip`) is in it.
+ *
+ * When NEITHER mechanism is configured the callback is accepted but a per-request
+ * warning is logged so the operator knows the endpoints are unauthenticated.
+ * When at least one mechanism is configured but none is satisfied, the request is
+ * rejected with 403.
  */
 function inboundWebhookAuth(req: Request, res: Response, next: NextFunction): void {
   const config = getConfig();
   const expected = config.webhooks.inboundSecret;
+  const allowlist = (config.webhooks.inboundIpAllowlist || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 
-  if (!expected) {
+  const secretConfigured = !!expected;
+  const allowlistConfigured = allowlist.length > 0;
+
+  // Token check (only when a secret is configured).
+  let tokenValid = false;
+  if (secretConfigured) {
+    const rawToken = req.headers['x-webhook-token'] ?? req.query?.token;
+    const provided = Array.isArray(rawToken) ? rawToken[0] : rawToken;
+    tokenValid = typeof provided === 'string' && safeCompare(provided, expected as string);
+  }
+
+  // Source-IP check (only when an allowlist is configured).
+  const ipAllowed = allowlistConfigured && ipInAnyCidr(req.ip, allowlist);
+
+  if (tokenValid || ipAllowed) {
+    next();
+    return;
+  }
+
+  if (!secretConfigured && !allowlistConfigured) {
     logger.warn(
-      'Inbound webhook accepted without authentication (set WEBHOOK_INBOUND_SECRET to require a token)',
+      'Inbound webhook accepted without authentication ' +
+        '(set WEBHOOK_INBOUND_SECRET and/or WEBHOOK_INBOUND_IP_ALLOWLIST)',
       { ip: req.ip, path: req.path }
     );
     next();
     return;
   }
 
-  const headerToken = req.headers['x-webhook-token'];
-  const queryToken = req.query?.token;
-  const rawToken = headerToken ?? queryToken;
-  const provided = Array.isArray(rawToken) ? rawToken[0] : rawToken;
-
-  if (typeof provided !== 'string' || !safeCompare(provided, expected)) {
-    logger.warn('Inbound webhook authentication failed', { ip: req.ip, path: req.path });
-    res.status(403).json({ error: 'forbidden', message: 'Invalid webhook token' });
-    return;
-  }
-
-  next();
+  logger.warn('Inbound webhook authentication failed', {
+    ip: req.ip,
+    path: req.path,
+    secretConfigured,
+    allowlistConfigured,
+  });
+  res.status(403).json({ error: 'forbidden', message: 'Invalid webhook token or source IP' });
 }
 
 /**
