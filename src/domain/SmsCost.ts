@@ -49,33 +49,9 @@ export class SmsCost {
   }
 
   /**
-   * Create from storage units (1/10000 dollars)
-   */
-  static fromStorageUnits(units: number): SmsCost {
-    return new SmsCost(units);
-  }
-
-  /**
    * Get value in USD (for display)
    */
   toUsd(): number {
     return this.cents / 10000;
-  }
-
-  /**
-   * Format for display with appropriate decimal places
-   */
-  format(): string {
-    const usd = this.toUsd();
-    // Show 4 decimal places for small amounts typical of SMS
-    return `$${usd.toFixed(4)}`;
-  }
-
-  /**
-   * Format for display with 2 decimal places (for totals)
-   */
-  formatTotal(): string {
-    const usd = this.toUsd();
-    return `$${usd.toFixed(2)}`;
   }
 }

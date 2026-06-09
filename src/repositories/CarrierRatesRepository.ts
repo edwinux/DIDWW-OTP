@@ -73,21 +73,40 @@ export class CarrierRatesRepository {
     for (let len = Math.min(6, digits.length); len >= 1; len--) {
       prefixes.push(digits.slice(0, len));
     }
-
-    // Try each prefix with src_prefix match first, then without
-    for (const prefix of prefixes) {
-      // Try with source prefix
-      if (srcPrefix) {
-        const withSrc = this.findRate(channel, prefix, srcPrefix);
-        if (withSrc) return withSrc;
-      }
-
-      // Try without source prefix
-      const withoutSrc = this.findRate(channel, prefix, null);
-      if (withoutSrc) return withoutSrc;
+    if (prefixes.length === 0) {
+      return null;
     }
 
-    return null;
+    // Resolve in a SINGLE query instead of up to ~12 round-trips. Priority order is
+    // preserved: longest dst_prefix wins, and for a given prefix a src_prefix-specific
+    // row beats a src_prefix-IS-NULL row.
+    const db = dbManager.getDb();
+    const placeholders = prefixes.map(() => '?').join(', ');
+
+    if (srcPrefix) {
+      const row = db
+        .prepare(
+          `SELECT * FROM carrier_rates
+           WHERE channel = ? AND dst_prefix IN (${placeholders})
+             AND (src_prefix = ? OR src_prefix IS NULL)
+           ORDER BY LENGTH(dst_prefix) DESC,
+                    CASE WHEN src_prefix IS NULL THEN 1 ELSE 0 END ASC
+           LIMIT 1`
+        )
+        .get(channel, ...prefixes, srcPrefix) as CarrierRate | undefined;
+      return row || null;
+    }
+
+    const row = db
+      .prepare(
+        `SELECT * FROM carrier_rates
+         WHERE channel = ? AND dst_prefix IN (${placeholders})
+           AND src_prefix IS NULL
+         ORDER BY LENGTH(dst_prefix) DESC
+         LIMIT 1`
+      )
+      .get(channel, ...prefixes) as CarrierRate | undefined;
+    return row || null;
   }
 
   /**

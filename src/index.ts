@@ -12,6 +12,7 @@ import { getAmiClient } from './ami/client.js';
 import { registerAmiHandlers } from './ami/handlers.js';
 import { getCallTracker } from './services/CallTrackerService.js';
 import { OtpRequestRepository, FraudRulesRepository, WebhookLogRepository, WhitelistRepository, CdrRepository, CarrierRatesRepository } from './repositories/index.js';
+import { OtpEventRepository } from './repositories/OtpEventRepository.js';
 import { CdrController } from './controllers/CdrController.js';
 import { RateLearningService } from './services/RateLearningService.js';
 import { initCostPredictionService } from './services/CostPredictionService.js';
@@ -135,6 +136,9 @@ async function main(): Promise<void> {
       getAsnDatabase().stopPeriodicUpdates();
       getPhoneNumberService().shutdown();
       rateLearningService?.stopPeriodicLearning();
+      if (retentionInterval) {
+        clearInterval(retentionInterval);
+      }
       dbManager.close();
       process.exit(0);
     };
@@ -187,6 +191,49 @@ async function main(): Promise<void> {
       logger.info('CDR ingestion and rate learning enabled', {
         targetTrunkId: config.cdr.targetTrunkId,
         learningInterval: config.cdr.learningIntervalMinutes
+      });
+    }
+
+    // Data-retention sweeper (opt-in via DATA_RETENTION_ENABLED). Periodically purge
+    // old rows so the SQLite DB cannot grow without bound. Runs once on startup and
+    // then every sweepIntervalHours. Each repo cleanup is independently guarded so one
+    // failure does not abort the others. Disabled by default: nothing is ever deleted
+    // unless an operator opts in.
+    let retentionInterval: NodeJS.Timeout | undefined;
+    if (config.retention.enabled) {
+      const otpEventRepo = new OtpEventRepository();
+      const retentionCdrRepo = new CdrRepository();
+      const runRetentionSweep = (): void => {
+        try {
+          // otp/event/webhook cleanup take HOURS; cdr cleanup takes DAYS.
+          const otpRequestsDeleted = otpRepo.cleanup(config.retention.otpRequestsDays * 24);
+          const otpEventsDeleted = otpEventRepo.cleanup(config.retention.otpEventsDays * 24);
+          const webhookLogsDeleted = webhookLogRepo.cleanup(config.retention.webhookLogsDays * 24);
+          const cdrRecordsDeleted = retentionCdrRepo.cleanup(config.retention.cdrDays);
+          logger.info('Data retention sweep complete', {
+            otpRequestsDeleted,
+            otpEventsDeleted,
+            webhookLogsDeleted,
+            cdrRecordsDeleted,
+          });
+        } catch (err) {
+          logger.error('Data retention sweep failed', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      };
+
+      runRetentionSweep(); // initial sweep on startup
+      retentionInterval = setInterval(
+        runRetentionSweep,
+        config.retention.sweepIntervalHours * 60 * 60 * 1000
+      );
+      logger.info('Data retention sweeper enabled', {
+        sweepIntervalHours: config.retention.sweepIntervalHours,
+        otpRequestsDays: config.retention.otpRequestsDays,
+        otpEventsDays: config.retention.otpEventsDays,
+        webhookLogsDays: config.retention.webhookLogsDays,
+        cdrDays: config.retention.cdrDays,
       });
     }
 

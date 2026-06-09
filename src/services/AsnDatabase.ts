@@ -76,6 +76,10 @@ interface PendingRequest {
  * ASN Database Service (Singleton)
  */
 class AsnDatabaseService {
+  // Upper bound on the unresolved-IP dedup set. It is normally cleared on a successful
+  // database update, but if updates keep failing it would otherwise grow without limit.
+  private static readonly MAX_UNRESOLVED_IPS = 50000;
+
   private reader: Reader<AsnRecord> | null = null;
   private config: AsnDatabaseConfig;
   private lastUpdateAttempt: number = 0;
@@ -213,6 +217,12 @@ class AsnDatabaseService {
    */
   private trackUnresolved(ip: string): void {
     if (!this.unresolvedIps.has(ip)) {
+      // Bound memory: if the set has hit its cap (updates have been failing), drop the
+      // dedup history. The unresolvedCount is preserved so update triggering still works;
+      // at worst a previously-seen IP is counted again, which only hastens the next update.
+      if (this.unresolvedIps.size >= AsnDatabaseService.MAX_UNRESOLVED_IPS) {
+        this.unresolvedIps.clear();
+      }
       this.unresolvedIps.add(ip);
       this.unresolvedCount++;
 

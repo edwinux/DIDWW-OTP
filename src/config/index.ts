@@ -172,6 +172,18 @@ const configSchema = z.object({
     defaultSmsRateUnits: z.coerce.number().int().min(1).max(100000).default(100), // $0.01 per SMS
     defaultVoiceRateUnits: z.coerce.number().int().min(1).max(100000).default(200), // $0.02 per minute
   }),
+
+  // Data-retention sweeper. Disabled by default: NO rows are ever deleted unless an
+  // operator opts in via DATA_RETENTION_ENABLED=true. Windows are in days; the sweep
+  // runs once on startup and then every sweepIntervalHours.
+  retention: z.object({
+    enabled: z.coerce.boolean().default(false),
+    otpRequestsDays: z.coerce.number().int().min(1).max(3650).default(90),
+    otpEventsDays: z.coerce.number().int().min(1).max(3650).default(90),
+    webhookLogsDays: z.coerce.number().int().min(1).max(3650).default(30),
+    cdrDays: z.coerce.number().int().min(1).max(3650).default(365),
+    sweepIntervalHours: z.coerce.number().int().min(1).max(168).default(24),
+  }),
 });
 
 /**
@@ -281,6 +293,14 @@ function parseEnvVars(): Record<string, unknown> {
       learningBatchSize: process.env.CDR_LEARNING_BATCH_SIZE,
       defaultSmsRateUnits: process.env.CDR_DEFAULT_SMS_RATE_UNITS,
       defaultVoiceRateUnits: process.env.CDR_DEFAULT_VOICE_RATE_UNITS,
+    },
+    retention: {
+      enabled: process.env.DATA_RETENTION_ENABLED,
+      otpRequestsDays: process.env.DATA_RETENTION_OTP_REQUESTS_DAYS,
+      otpEventsDays: process.env.DATA_RETENTION_OTP_EVENTS_DAYS,
+      webhookLogsDays: process.env.DATA_RETENTION_WEBHOOK_LOGS_DAYS,
+      cdrDays: process.env.DATA_RETENTION_CDR_DAYS,
+      sweepIntervalHours: process.env.DATA_RETENTION_SWEEP_INTERVAL_HOURS,
     },
   };
 }

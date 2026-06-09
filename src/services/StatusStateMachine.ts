@@ -117,25 +117,6 @@ export class StatusStateMachine {
   }
 
   /**
-   * Get all valid next statuses from current status
-   */
-  getValidTransitions(from: OtpStatus): OtpStatus[] {
-    return VALID_TRANSITIONS[from] || [];
-  }
-
-  /**
-   * Validate and return the new status, or current if transition is invalid
-   * Logs a warning if transition is invalid but doesn't throw
-   */
-  transition(current: OtpStatus, next: OtpStatus): OtpStatus {
-    if (this.canTransition(current, next)) {
-      return next;
-    }
-    // Invalid transition - return current status (defensive)
-    return current;
-  }
-
-  /**
    * Check if auth status transition is valid
    * Auth status can only go from null to verified/wrong_code
    */

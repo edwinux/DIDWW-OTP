@@ -283,7 +283,7 @@ export class FraudRulesRepository {
     const stmt = this.db.prepare(`
       UPDATE ip_reputation
       SET verified_requests = verified_requests + 1,
-          trust_score = CAST(verified_requests + 1 AS REAL) / CAST(total_requests AS REAL),
+          trust_score = CAST(verified_requests + 1 AS REAL) / CAST(MAX(total_requests, 1) AS REAL),
           last_seen = ?
       WHERE ip_subnet = ?
     `);
@@ -298,7 +298,7 @@ export class FraudRulesRepository {
     const stmt = this.db.prepare(`
       UPDATE ip_reputation
       SET failed_requests = failed_requests + 1,
-          trust_score = CAST(verified_requests AS REAL) / CAST(total_requests AS REAL),
+          trust_score = CAST(verified_requests AS REAL) / CAST(MAX(total_requests, 1) AS REAL),
           last_seen = ?
       WHERE ip_subnet = ?
     `);
