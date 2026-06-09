@@ -8,10 +8,11 @@
 import express from 'express';
 import session from 'express-session';
 import cookieParser from 'cookie-parser';
+import crypto from 'crypto';
 import path from 'path';
 import { createServer as createHttpServer } from 'http';
 import type { DispatchService } from '../services/DispatchService.js';
-import { getConfig } from '../config/index.js';
+import { getConfig, getTrustProxySetting } from '../config/index.js';
 import { registerAdminRoutes } from './routes.js';
 import { initializeWebSocket } from './websocket.js';
 import { logger } from '../utils/logger.js';
@@ -23,38 +24,71 @@ export function createAdminServer(dispatchService: DispatchService) {
   const config = getConfig();
   const app = express();
 
-  // Trust proxy for accurate IP detection
-  app.set('trust proxy', true);
+  // Trust proxy for accurate IP detection (number of known proxy hops, default 1).
+  // Required so the admin IP whitelist sees the real client IP and not a spoofed
+  // X-Forwarded-For, and so `secure: 'auto'` cookies work behind the TLS proxy.
+  app.set('trust proxy', getTrustProxySetting());
 
   // Cookie parser
   app.use(cookieParser());
 
   // Session middleware
-  const sessionSecret = config.admin.sessionSecret || 'admin-session-secret-change-me';
-  app.use(
-    session({
-      secret: sessionSecret,
-      name: 'admin.sid',
-      resave: false,
-      saveUninitialized: false,
-      cookie: {
-        secure: false, // Set to true if using HTTPS
-        httpOnly: true,
-        maxAge: config.admin.sessionTtlMinutes * 60 * 1000,
-        sameSite: 'lax',
-      },
-    })
-  );
+  // Never sign sessions with a hardcoded, source-visible constant. Require an
+  // explicit ADMIN_SESSION_SECRET; if absent, fall back to a random per-process
+  // secret (sessions won't survive a restart, but cannot be forged offline).
+  let sessionSecret = config.admin.sessionSecret;
+  if (!sessionSecret) {
+    sessionSecret = crypto.randomBytes(32).toString('hex');
+    logger.warn(
+      'ADMIN_SESSION_SECRET not set - using a random per-process secret. ' +
+        'Set ADMIN_SESSION_SECRET to keep admin sessions valid across restarts.'
+    );
+  }
+
+  // 'auto' sets the Secure flag only when the request is HTTPS (honoured behind the
+  // TLS-terminating proxy via trust proxy + X-Forwarded-Proto), so the admin.sid
+  // cookie is never sent over plaintext in production.
+  const cookieSecure: boolean | 'auto' =
+    config.admin.cookieSecure === 'true'
+      ? true
+      : config.admin.cookieSecure === 'false'
+        ? false
+        : 'auto';
+
+  const sessionMiddleware = session({
+    secret: sessionSecret,
+    name: 'admin.sid',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: cookieSecure,
+      httpOnly: true,
+      maxAge: config.admin.sessionTtlMinutes * 60 * 1000,
+      sameSite: 'lax',
+    },
+  });
+  app.use(sessionMiddleware);
 
   // Body parsing
   app.use(express.json({ limit: '10kb' }));
   app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
-  // CORS headers for development
+  // CORS headers - only reflect explicitly allow-listed origins.
+  // Reflecting an arbitrary Origin together with Allow-Credentials lets any site make
+  // authenticated cross-origin requests against the admin API. The admin UI is served
+  // same-origin in production, so the allow-list is empty by default; configure
+  // ADMIN_CORS_ORIGINS (comma-separated) for local development against the dev server.
+  const allowedOrigins = new Set(
+    (config.admin.corsOrigins || '')
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean)
+  );
   app.use((req, res, next) => {
     const origin = req.headers.origin;
-    if (origin) {
+    if (origin && allowedOrigins.has(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
       res.setHeader('Access-Control-Allow-Credentials', 'true');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -90,8 +124,11 @@ export function createAdminServer(dispatchService: DispatchService) {
   // Create HTTP server
   const httpServer = createHttpServer(app);
 
-  // Initialize WebSocket server
-  const wsServer = initializeWebSocket(httpServer);
+  // Initialize WebSocket server.
+  // The session middleware is passed through so the WS handshake can validate the
+  // admin session cookie (otherwise any client reaching /admin/ws could subscribe to
+  // the live OTP event stream without authentication).
+  const wsServer = initializeWebSocket(httpServer, sessionMiddleware);
 
   logger.info('Admin server configured', {
     port: config.admin.port,

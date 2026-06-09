@@ -12,6 +12,7 @@ import type { DispatchService } from '../services/DispatchService.js';
 import { isDbConnected } from '../database/index.js';
 import { isAriConnected } from '../ari/client.js';
 import { getConfig } from '../config/index.js';
+import { safeCompare } from '../utils/secureCompare.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -19,9 +20,11 @@ import { logger } from '../utils/logger.js';
  */
 function authMiddleware(req: Request, res: Response, next: NextFunction): void {
   const config = getConfig();
-  const secret = req.body?.secret || req.headers['x-api-secret'];
+  const rawSecret = req.body?.secret ?? req.headers['x-api-secret'];
+  const provided = Array.isArray(rawSecret) ? rawSecret[0] : rawSecret;
 
-  if (!secret || secret !== config.api.secret) {
+  // Constant-time comparison to avoid leaking the secret via response timing.
+  if (typeof provided !== 'string' || !safeCompare(provided, config.api.secret)) {
     logger.warn('Authentication failed', { ip: req.ip });
     res.status(403).json({ error: 'forbidden', message: 'Invalid API secret' });
     return;
@@ -30,6 +33,41 @@ function authMiddleware(req: Request, res: Response, next: NextFunction): void {
   // Remove secret from body to avoid logging
   if (req.body?.secret) {
     delete req.body.secret;
+  }
+
+  next();
+}
+
+/**
+ * Auth middleware for INBOUND provider callbacks (DIDWW DLR / CDR).
+ *
+ * When WEBHOOK_INBOUND_SECRET is configured, requires a matching token supplied
+ * via the X-Webhook-Token header or `?token=` query string (constant-time compare).
+ * When it is not configured, callbacks are accepted but a warning is logged so the
+ * operator knows the endpoints are unauthenticated.
+ */
+function inboundWebhookAuth(req: Request, res: Response, next: NextFunction): void {
+  const config = getConfig();
+  const expected = config.webhooks.inboundSecret;
+
+  if (!expected) {
+    logger.warn(
+      'Inbound webhook accepted without authentication (set WEBHOOK_INBOUND_SECRET to require a token)',
+      { ip: req.ip, path: req.path }
+    );
+    next();
+    return;
+  }
+
+  const headerToken = req.headers['x-webhook-token'];
+  const queryToken = req.query?.token;
+  const rawToken = headerToken ?? queryToken;
+  const provided = Array.isArray(rawToken) ? rawToken[0] : rawToken;
+
+  if (typeof provided !== 'string' || !safeCompare(provided, expected)) {
+    logger.warn('Inbound webhook authentication failed', { ip: req.ip, path: req.path });
+    res.status(403).json({ error: 'forbidden', message: 'Invalid webhook token' });
+    return;
   }
 
   next();
@@ -82,15 +120,15 @@ export function registerRoutes(
     webhookController.handleAuthFeedback(req, res);
   });
 
-  app.post('/webhooks/dlr', (req: Request, res: Response) => {
-    // DLR callbacks come from DIDWW, no auth required
+  app.post('/webhooks/dlr', inboundWebhookAuth, (req: Request, res: Response) => {
+    // DLR callbacks come from DIDWW; authenticated via WEBHOOK_INBOUND_SECRET when set
     webhookController.handleDlrCallback(req, res);
   });
 
   // CDR streaming webhook (if CDR controller is provided)
   if (cdrController) {
-    app.post('/webhooks/cdr', (req: Request, res: Response) => {
-      // CDR callbacks come from DIDWW, no auth required
+    app.post('/webhooks/cdr', inboundWebhookAuth, (req: Request, res: Response) => {
+      // CDR callbacks come from DIDWW; authenticated via WEBHOOK_INBOUND_SECRET when set
       cdrController.handleCdrBatch(req, res);
     });
     logger.info('CDR webhook endpoint registered');

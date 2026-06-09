@@ -7,7 +7,7 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import type { DispatchService } from '../services/DispatchService.js';
-import { extractClientIp } from '../utils/ipv6.js';
+import { normalizeIp } from '../utils/ipv6.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -24,7 +24,9 @@ const dispatchSchema = z.object({
     .min(1)
     .default(['sms', 'voice']),
   webhook_url: z.string().url().optional(),
-  ip: z.string().ip().optional(),
+  // NOTE: a client-supplied `ip` is intentionally NOT accepted for fraud scoring.
+  // The source IP is derived from the trusted proxy chain (req.ip) so callers cannot
+  // rotate fake IPs to bypass per-IP/subnet rate limiting, ASN/geo blocking, etc.
   max_cost_usd: z.number().positive().max(100000000).optional(), // Maximum cost in USD (max $100M to prevent overflow)
 });
 
@@ -55,14 +57,13 @@ export class DispatchController {
       return;
     }
 
-    const { phone, code, session_id, channels, webhook_url, ip: bodyIp, max_cost_usd } = validation.data;
+    const { phone, code, session_id, channels, webhook_url, max_cost_usd } = validation.data;
 
-    // Extract client IP - prefer explicit body IP over header/socket
-    const headerIp = extractClientIp(
-      req.headers as Record<string, string | string[] | undefined>,
-      req.socket.remoteAddress
-    );
-    const clientIp = bodyIp || headerIp;
+    // Derive the client IP solely from the trusted proxy chain (Express req.ip,
+    // governed by the `trust proxy` setting). This is not spoofable by clients,
+    // unlike a raw X-Forwarded-For header or a body-supplied IP.
+    const rawIp = req.ip || req.socket.remoteAddress || '0.0.0.0';
+    const clientIp = normalizeIp(rawIp.replace(/^::ffff:/, '')) || '0.0.0.0';
 
     // Normalize phone to E.164
     const e164Phone = phone.startsWith('+') ? phone : `+${phone}`;
