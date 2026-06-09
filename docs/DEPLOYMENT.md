@@ -5,6 +5,7 @@ This guide covers deploying the DIDWW Voice OTP Gateway to various environments.
 ## Table of Contents
 
 - [Requirements](#requirements)
+- [Operational Security Requirements](#operational-security-requirements)
 - [VPS Deployment](#vps-deployment)
 - [Docker Compose (Production)](#docker-compose-production)
 - [Cloud Platforms](#cloud-platforms)
@@ -31,6 +32,61 @@ The gateway requires specific ports to be accessible from the internet:
 2. SIP trunk credentials (username/password)
 3. At least one DID (phone number) for caller ID
 4. Trunk configured for your server's IP (if using IP-based auth)
+
+## Operational Security Requirements
+
+The gateway runs behind a TLS-terminating reverse proxy in production. The following settings **must** be configured correctly together — getting any one wrong silently weakens fraud protection, admin access control, or session handling. See [Reverse Proxy Setup](#reverse-proxy-setup) for the matching nginx configuration.
+
+### Proxy trust (`TRUST_PROXY`)
+
+`req.ip` is the single source of truth for the client IP across the whole system: per-IP/subnet fraud rate limiting, ASN/geo blocking on `/dispatch`, the admin IP whitelist, and the `ADMIN_COOKIE_SECURE=auto` HTTPS decision. Express derives `req.ip` from the `trust proxy` setting, which is controlled by `TRUST_PROXY`.
+
+- Set `TRUST_PROXY` to the **number of trusted proxy hops** in front of the app. The default `1` matches the standard single-nginx deployment.
+- Use `0` only when there is **no** reverse proxy in front of the gateway.
+- **Never** use `true`. It trusts the entire client-controllable `X-Forwarded-For` chain, letting an attacker spoof `req.ip` to bypass IP rate limiting **and** the admin IP whitelist.
+- Setting it too low (`0`) behind a real proxy makes every request appear to originate from the proxy IP, breaking per-client differentiation.
+
+> Note: a client-supplied `ip` field in the `/dispatch` request body is **ignored** — the fraud IP comes exclusively from the trusted proxy chain. Callers that previously passed `ip` must rely on the real source IP instead.
+
+### nginx forwarding headers
+
+For the settings above to work, the proxy must forward both:
+
+- `X-Forwarded-Proto $scheme` — so `ADMIN_COOKIE_SECURE=auto` detects HTTPS and sets the `Secure` flag on the `admin.sid` session cookie. Without it, Express sees plain HTTP and the cookie may be sent insecurely.
+- The real client IP as the **last** `X-Forwarded-For` hop — so IP rate limiting, ASN/geo blocking, and the admin IP whitelist see the actual client. `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` appends the client IP; with `TRUST_PROXY=1` Express reads exactly that last hop.
+
+### Admin session secret (`ADMIN_SESSION_SECRET`)
+
+Set a strong random `ADMIN_SESSION_SECRET` (min 16 chars; e.g. `openssl rand -hex 32`) in production. If it is unset, a random per-process secret is generated at startup and **all admin sessions are invalidated on every restart/redeploy**, forcing re-login. A startup warning is logged when it is missing.
+
+### Admin cookie Secure flag (`ADMIN_COOKIE_SECURE`)
+
+Leave at the default `auto`, which sets the cookie `Secure` flag only when the request is HTTPS. This depends on the proxy forwarding `X-Forwarded-Proto` and on `TRUST_PROXY` being set (see above). The standard nginx deployment terminates TLS and forwards `X-Forwarded-Proto`, so `auto` yields Secure cookies in production. Set `ADMIN_COOKIE_SECURE=false` only for local plain-HTTP development.
+
+### Admin CORS (`ADMIN_CORS_ORIGINS`)
+
+Leave **unset** in production — the admin UI is served same-origin, so no cross-origin access is needed. Set it (comma-separated exact origins, e.g. `http://localhost:5173`) only for local development against the Vite dev server. Never use a wildcard: credentials are allowed on the admin API.
+
+### Admin WebSocket authentication
+
+The `/admin/ws` live-event WebSocket now **requires an authenticated admin session** at the handshake. The browser must present a valid signed `admin.sid` cookie from the login flow, and the same session TTL (`ADMIN_SESSION_TTL`, default 480 min) applies — after expiry the upgrade is rejected and re-login is required. Unauthenticated upgrades are refused (`401`), so no client can subscribe to the live OTP stream (phone numbers, fraud scores, shadow-ban flags) without logging in.
+
+### Inbound webhook authentication (`WEBHOOK_INBOUND_SECRET`)
+
+Optional but recommended. When unset, the inbound DIDWW callback endpoints `/webhooks/dlr` and `/webhooks/cdr` accept callbacks with **no authentication** (only a per-request warning is logged).
+
+- Set `WEBHOOK_INBOUND_SECRET` to a strong shared secret to require a token on both inbound endpoints.
+- Provide the token via the `X-Webhook-Token` header, or — since DIDWW's callback config typically only allows a URL — append `?token=<WEBHOOK_INBOUND_SECRET>` to the callback URL.
+- You must update **both** the DIDWW **DLR** callback URL and the **CDR** callback URL with the token, or those callbacks will be rejected with `403`. (`/webhooks/auth` is unaffected — it uses the regular `API_SECRET`.)
+
+```text
+https://otp-gw.example.com/webhooks/dlr?token=<WEBHOOK_INBOUND_SECRET>
+https://otp-gw.example.com/webhooks/cdr?token=<WEBHOOK_INBOUND_SECRET>
+```
+
+### Outbound webhook destinations (SSRF protection)
+
+Client-configured outbound `webhook_url` targets must resolve to a **publicly routable** IP. The gateway blocks delivery to private, loopback, link-local (incl. cloud metadata `169.254.169.254`), CGNAT, and reserved ranges (IPv4 and IPv6), rejects non-`http(s)` schemes, and does **not** follow `30x` redirects. Blocked deliveries are logged as `Blocked` and are **not** retried. Webhook receivers must be on public hosts and return a `2xx` directly.
 
 ## VPS Deployment
 
@@ -240,6 +296,8 @@ PUBLIC_IP=203.0.113.50
 
 You can put the HTTP API behind a reverse proxy for HTTPS. However, **do not proxy the SIP/RTP traffic**.
 
+The proxy **must** forward `X-Forwarded-Proto` and the real client IP as the last `X-Forwarded-For` hop, and `TRUST_PROXY` must match the hop count (default `1`). See [Operational Security Requirements](#operational-security-requirements) for why.
+
 ### Nginx Example
 
 ```nginx
@@ -253,6 +311,21 @@ server {
 
     location / {
         proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        # Append the real client IP as the LAST X-Forwarded-For hop. With TRUST_PROXY=1
+        # Express reads exactly this hop as req.ip (IP rate limiting, ASN/geo, admin whitelist).
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # Forward the scheme so ADMIN_COOKIE_SECURE=auto detects HTTPS and sets the Secure flag.
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Admin WebSocket (/admin/ws) requires the upgrade headers to be forwarded.
+    location /admin/ws {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
