@@ -39,7 +39,9 @@ const dlrCallbackSchema = z.object({
       fragments_sent: z.number().optional(),
       price: z.number().optional(),
       code_id: z.union([z.string(), z.number()]).nullable().optional(),
-      error_code: z.string().optional(),
+      // DIDWW may serialize error_code as a string or a number; accept both so a
+      // numeric value cannot fail validation and silently drop the whole DLR.
+      error_code: z.union([z.string(), z.number()]).optional(),
       error_message: z.string().optional(),
     }),
   }),
@@ -168,9 +170,14 @@ export class WebhookController {
     }
 
     // Map DIDWW status to SMS event type (case-insensitive - status already lowercased)
-    let eventType: 'delivered' | 'failed' | 'undelivered' | null = null;
-    if (status === 'delivered' || status === 'sent' || status === 'success') {
+    let eventType: 'sent' | 'delivered' | 'failed' | 'undelivered' | null = null;
+    if (status === 'delivered' || status === 'success') {
       eventType = 'delivered';
+    } else if (status === 'sent') {
+      // DIDWW 'sent' = accepted by carrier / enroute, NOT yet delivered to the
+      // device. Map to the intermediate 'sent' status (not terminal 'delivered')
+      // so a later delivered/failed DLR can still be applied.
+      eventType = 'sent';
     } else if (
       status === 'failed' ||
       status === 'rejected' ||

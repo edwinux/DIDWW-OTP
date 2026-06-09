@@ -10,7 +10,7 @@ import { logger } from '../utils/logger.js';
 /**
  * Schema version for migration tracking
  */
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 
 /**
  * SQL schema definitions
@@ -54,6 +54,10 @@ CREATE INDEX IF NOT EXISTS idx_otp_requests_ip_subnet ON otp_requests(ip_subnet)
 CREATE INDEX IF NOT EXISTS idx_otp_requests_status ON otp_requests(status);
 CREATE INDEX IF NOT EXISTS idx_otp_requests_created_at ON otp_requests(created_at);
 CREATE INDEX IF NOT EXISTS idx_otp_requests_session_id ON otp_requests(session_id);
+-- Expression index matching findByProviderId's WHERE LOWER(provider_id) = LOWER(?)
+-- (case-insensitive DLR lookup on every inbound delivery report). Without it the
+-- LOWER() predicate is non-sargable and scans the whole table.
+CREATE INDEX IF NOT EXISTS idx_otp_requests_provider_id_lower ON otp_requests(LOWER(provider_id));
 
 -- IP reputation tracking
 CREATE TABLE IF NOT EXISTS ip_reputation (
@@ -377,6 +381,12 @@ const V9_INDEX_SQL = `
 CREATE INDEX IF NOT EXISTS idx_otp_requests_failure_category ON otp_requests(failure_category, created_at);
 `;
 
+const V10_INDEX_SQL = `
+-- Expression index for case-insensitive provider_id lookups (findByProviderId),
+-- hit on every inbound DLR/CDR callback. Matches WHERE LOWER(provider_id) = LOWER(?).
+CREATE INDEX IF NOT EXISTS idx_otp_requests_provider_id_lower ON otp_requests(LOWER(provider_id));
+`;
+
 /**
  * Run database migrations
  */
@@ -544,6 +554,20 @@ export function runMigrations(): void {
     }
     try {
       db.exec(V9_INDEX_SQL);
+    } catch (err) {
+      // Index might already exist
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('already exists')) {
+        throw err;
+      }
+    }
+  }
+
+  // Run V10 migration if upgrading from V9 or earlier
+  if (currentVersion < 10) {
+    logger.info('Applying V10 migration...', { from: currentVersion, to: 10 });
+    try {
+      db.exec(V10_INDEX_SQL);
     } catch (err) {
       // Index might already exist
       const msg = err instanceof Error ? err.message : String(err);

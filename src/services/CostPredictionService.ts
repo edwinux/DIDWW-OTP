@@ -27,6 +27,7 @@ export interface CostPrediction {
 export interface CostPredictionOptions {
   defaultSmsRateUnits?: number;
   defaultVoiceRateUnits?: number;
+  assumedVoiceCallSeconds?: number;
 }
 
 /**
@@ -40,11 +41,28 @@ export class CostPredictionService {
   // Configurable via CDR_DEFAULT_SMS_RATE_UNITS and CDR_DEFAULT_VOICE_RATE_UNITS
   private readonly defaultSmsRate: number;
   private readonly defaultVoiceRate: number;
+  // Assumed billable duration of a voice OTP call (seconds), used to convert the
+  // stored per-minute voice rate into a whole-call cost estimate.
+  private readonly assumedVoiceCallSeconds: number;
 
   constructor(ratesRepo: CarrierRatesRepository, options?: CostPredictionOptions) {
     this.ratesRepo = ratesRepo;
     this.defaultSmsRate = options?.defaultSmsRateUnits ?? 100; // $0.01 per SMS
     this.defaultVoiceRate = options?.defaultVoiceRateUnits ?? 200; // $0.02 per minute
+    this.assumedVoiceCallSeconds = options?.assumedVoiceCallSeconds ?? 60;
+  }
+
+  /**
+   * Convert a stored per-minute voice rate into a whole-call cost estimate.
+   * Voice rates are stored per minute (RateLearningService computes price/duration*60),
+   * but a prediction must reflect the cost of an entire OTP call. We bill the assumed
+   * call duration rounded UP to the rate's billing increment (default 60s), so the
+   * estimate never underestimates a sub-minute / multi-increment call for cost-capping.
+   */
+  private voiceCallCostFromPerMinute(perMinuteRateUnits: number, billingIncrementSeconds?: number): number {
+    const increment = billingIncrementSeconds && billingIncrementSeconds > 0 ? billingIncrementSeconds : 60;
+    const billableSeconds = Math.ceil(this.assumedVoiceCallSeconds / increment) * increment;
+    return Math.round((perMinuteRateUnits * billableSeconds) / 60);
   }
 
   /**
@@ -55,11 +73,15 @@ export class CostPredictionService {
     const rate = this.ratesRepo.findBestMatchingRate(channel, dstPhone, srcPrefix);
 
     if (!rate) {
-      // No learned rate, use configurable default
-      const defaultRate = channel === 'sms' ? this.defaultSmsRate : this.defaultVoiceRate;
+      // No learned rate, use configurable default. Voice defaults are per-minute,
+      // so convert to a whole-call estimate.
+      const estimatedUnits =
+        channel === 'sms'
+          ? this.defaultSmsRate
+          : this.voiceCallCostFromPerMinute(this.defaultVoiceRate);
       return {
-        estimatedCostUnits: defaultRate,
-        estimatedCostUsd: defaultRate / 10000,
+        estimatedCostUnits: estimatedUnits,
+        estimatedCostUsd: estimatedUnits / 10000,
         confidence: 'none',
         matchedPrefix: null,
         sampleCount: 0,
@@ -76,9 +98,16 @@ export class CostPredictionService {
       confidence = 'low';
     }
 
+    // Voice rates are stored per minute; convert to a whole-call estimate.
+    // SMS rates are already per message/fragment.
+    const estimatedUnits =
+      channel === 'sms'
+        ? rate.rate_avg
+        : this.voiceCallCostFromPerMinute(rate.rate_avg, rate.billing_increment);
+
     return {
-      estimatedCostUnits: rate.rate_avg,
-      estimatedCostUsd: rate.rate_avg / 10000,
+      estimatedCostUnits: estimatedUnits,
+      estimatedCostUsd: estimatedUnits / 10000,
       confidence,
       matchedPrefix: rate.dst_prefix,
       sampleCount: rate.sample_count,
@@ -130,6 +159,7 @@ export function getCostPredictionService(): CostPredictionService {
     instance = new CostPredictionService(new CarrierRatesRepository(), {
       defaultSmsRateUnits: config.cdr.defaultSmsRateUnits,
       defaultVoiceRateUnits: config.cdr.defaultVoiceRateUnits,
+      assumedVoiceCallSeconds: config.cdr.assumedVoiceCallSeconds,
     });
   }
   return instance;
