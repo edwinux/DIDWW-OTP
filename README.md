@@ -102,7 +102,15 @@ API_SECRET=generate_with_openssl_rand_hex_32
 ADMIN_ENABLED=true
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=your_secure_password_min_8_chars
+# Session signing secret (>=16 chars). If unset, a random per-process secret is
+# generated and ALL admin sessions are lost on every restart/redeploy. Set in production.
 ADMIN_SESSION_SECRET=generate_with_openssl_rand_hex_32
+# Session cookie Secure flag: 'auto' (default) sets Secure when the request is HTTPS
+# (works behind a TLS proxy that forwards X-Forwarded-Proto + TRUST_PROXY set).
+ADMIN_COOKIE_SECURE=auto
+# Comma-separated CORS origins allowed to call the admin API cross-origin. Empty
+# (default) blocks cross-origin access. Set only for local dev, e.g. http://localhost:5173
+ADMIN_CORS_ORIGINS=
 
 # ===========================================
 # SMS Configuration (DIDWW SMS API)
@@ -149,11 +157,15 @@ Configure these URLs in your DIDWW console:
 | SMS Delivery Reports | `https://your-domain/webhooks/dlr` | SMS delivery status updates |
 | CDR Streaming | `https://your-domain/webhooks/cdr` | Voice call billing records |
 
+> **Inbound auth:** If you set `WEBHOOK_INBOUND_SECRET`, append `?token=<WEBHOOK_INBOUND_SECRET>` to **both** callback URLs above (DIDWW callbacks send no custom headers), otherwise these endpoints reject the callbacks with `403`. Leave it unset to accept callbacks unauthenticated.
+
 ---
 
 ## Nginx Reverse Proxy with SSL
 
 For production deployments behind nginx with SSL:
+
+> **Required headers:** Every proxied location below forwards both `X-Forwarded-Proto $scheme` (so `ADMIN_COOKIE_SECURE=auto` can detect HTTPS and set the `Secure` cookie flag) and `X-Forwarded-For $proxy_add_x_forwarded_for` (so the gateway can derive the real client IP for rate limiting and the admin IP whitelist). Keep `TRUST_PROXY` set to the number of proxy hops (default `1` for the single nginx below). With one trusted hop, the last `X-Forwarded-For` entry — appended by nginx — is the real client IP; do not add extra untrusted proxies without raising `TRUST_PROXY` to match.
 
 ```nginx
 upstream didww_admin {
@@ -284,9 +296,11 @@ real_ip_header CF-Connecting-IP;
 
 ### Authentication
 
-All API endpoints (except `/health` and `/webhooks/dlr`) require authentication via:
+Most API endpoints (`/dispatch`, the legacy `/send-otp`, and `/webhooks/auth`) require authentication via:
 - Request body: `"secret": "your_api_secret"`
 - Or header: `X-API-Secret: your_api_secret`
+
+The secret is compared in constant time. `/health` requires no authentication. Inbound DIDWW callbacks (`/webhooks/dlr`, `/webhooks/cdr`) use a separate token — see [POST /webhooks/dlr](#post-webhooksdlr) and `WEBHOOK_INBOUND_SECRET`.
 
 ---
 
@@ -357,9 +371,11 @@ Health check endpoint (no authentication required).
 
 ### POST /webhooks/dlr
 
-DIDWW Delivery Report callback endpoint (no authentication - called by DIDWW).
+DIDWW Delivery Report callback endpoint (called by DIDWW).
 
 Receives SMS delivery status updates in JSON:API format.
+
+**Inbound authentication:** When `WEBHOOK_INBOUND_SECRET` is set, this endpoint (and `/webhooks/cdr`) requires a matching token, supplied either via the `X-Webhook-Token` header or a `?token=` query parameter; the token is compared in constant time and a mismatch returns `403`. Because DIDWW's callback configuration only lets you set a URL (no custom headers), append the token to the configured callback URL, e.g. `https://your-domain/webhooks/dlr?token=<WEBHOOK_INBOUND_SECRET>` (do the same for the CDR URL). If `WEBHOOK_INBOUND_SECRET` is unset, callbacks are accepted without authentication and a per-request warning is logged.
 
 ---
 
@@ -429,6 +445,8 @@ Granular, channel-specific events for real-time tracking.
 ## WebSocket Events
 
 Connect to `/admin/ws` for real-time status updates.
+
+> **Authentication required:** The `/admin/ws` endpoint now requires an authenticated admin session at the WebSocket handshake. The browser must present a valid signed `admin.sid` cookie (obtained via the admin login flow), and the same session TTL (`ADMIN_SESSION_TTL`, default 480 min) applies — once it expires the handshake is rejected and re-login is required. Unauthenticated upgrades are refused with `401`. This prevents unauthenticated clients from subscribing to the live event stream (which exposes phone numbers, fraud scores, and shadow-ban flags).
 
 ### Subscribing to Channels
 
@@ -544,8 +562,10 @@ Access at `http://your-server/` (port 80 by default).
 | `ADMIN_USERNAME` | - | Admin login username |
 | `ADMIN_PASSWORD` | - | Admin login password |
 | `ADMIN_PORT` | `80` | Admin panel port |
-| `ADMIN_SESSION_SECRET` | - | Session encryption secret |
+| `ADMIN_SESSION_SECRET` | _(random per-process)_ | Session signing secret (>=16 chars). If unset, a random secret is generated at startup and all sessions are lost on every restart/redeploy. Set in production. |
 | `ADMIN_SESSION_TTL` | `480` | Session timeout (minutes) |
+| `ADMIN_COOKIE_SECURE` | `auto` | Session cookie `Secure` flag: `auto` sets it when the request is HTTPS (needs `X-Forwarded-Proto` + `TRUST_PROXY` behind a TLS proxy), `true` always, `false` never (local HTTP dev only) |
+| `ADMIN_CORS_ORIGINS` | _(empty)_ | Comma-separated allowlist of Origins permitted cross-origin access to the admin API. Empty blocks all cross-origin requests. Never use a wildcard (credentials are allowed) |
 
 ### Fraud Detection
 
@@ -576,6 +596,7 @@ Access at `http://your-server/` (port 80 by default).
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `TRUST_PROXY` | `1` | Number of trusted reverse-proxy hops in front of the app (`1` = single nginx). Determines how `req.ip` is derived, which drives IP rate limiting, ASN/geo blocking, and the admin IP whitelist. Use `0` only when there is no proxy. Never set `true` — it trusts the entire client-controllable `X-Forwarded-For` chain and lets attackers spoof their source IP |
 | `HTTP_PORT` | `8080` | API server port |
 | `SIP_PORT` | `5060` | SIP signaling port |
 | `RTP_PORT_START` | `10000` | RTP port range start |
@@ -604,6 +625,12 @@ Built-in fraud protection includes:
 ### Shadow Banning
 - High fraud score requests appear successful but are not delivered
 - Prevents attackers from knowing they're blocked
+
+### Outbound Webhook SSRF Protection
+- Client-supplied `webhook_url` targets are validated before each delivery: any URL resolving to a private, loopback, link-local (incl. cloud metadata `169.254.169.254`), CGNAT, or reserved IPv4/IPv6 address is permanently blocked (not retried) and logged
+- Only `http`/`https` schemes are allowed; the hostname is DNS-resolved at send time and every resolved address must be public
+- HTTP redirects are not followed (`redirect: manual`), so a webhook server cannot redirect into an internal address
+- This prevents callers from reaching internal services (cloud metadata, Asterisk ARI, the admin panel) via the webhook delivery mechanism
 
 ### Fraud Score Factors
 - Request velocity
