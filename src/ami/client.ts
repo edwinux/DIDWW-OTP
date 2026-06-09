@@ -381,8 +381,25 @@ export class AmiClient extends EventEmitter {
    * Handle disconnection and schedule reconnect
    */
   private handleDisconnect(): void {
+    // A single socket failure emits BOTH 'error' and 'close'; collapse them so we
+    // don't schedule two overlapping reconnect timers (which would orphan the first
+    // timer handle and fan out into duplicate sockets on every disconnect).
+    if (this.state === 'disconnected') {
+      return;
+    }
     this.state = 'disconnected';
-    this.socket = null;
+
+    if (this.socket) {
+      this.socket.removeAllListeners();
+      this.socket.destroy();
+      this.socket = null;
+    }
+
+    // Clear any existing reconnect timer before scheduling a new one.
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
 
     if (this.reconnectAttempts < this.maxReconnectAttempts && this.config) {
       this.reconnectAttempts++;

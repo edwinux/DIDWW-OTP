@@ -45,6 +45,17 @@ class AriClientManager {
   private isShuttingDown = false;
   private config: AriConnectionConfig | null = null;
   private stasisApps: string[] = [];
+  private onConnectedCallback: ((client: AriClient) => void) | null = null;
+
+  /**
+   * Register a callback invoked after every successful (re)connect, before the
+   * Stasis applications are started. Used to (re)attach application Stasis event
+   * handlers - a hard reconnect creates a brand-new client object, so handlers
+   * registered once against the original client would otherwise be lost.
+   */
+  setOnConnected(callback: (client: AriClient) => void): void {
+    this.onConnectedCallback = callback;
+  }
 
   /**
    * Get current connection state
@@ -110,6 +121,13 @@ class AriClientManager {
 
       // Set up event handlers
       this.setupEventHandlers();
+
+      // Re-attach application Stasis handlers to this (possibly brand-new) client
+      // BEFORE starting the apps, so no StasisStart events are missed after a
+      // hard reconnect.
+      if (this.onConnectedCallback) {
+        this.onConnectedCallback(this.client);
+      }
 
       // Start Stasis applications
       if (this.stasisApps.length > 0) {
