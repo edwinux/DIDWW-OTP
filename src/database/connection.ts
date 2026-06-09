@@ -131,13 +131,6 @@ class DatabaseManager {
 export const dbManager = new DatabaseManager();
 
 /**
- * Convenience function to get current database state
- */
-export function getDbState(): DatabaseState {
-  return dbManager.getState();
-}
-
-/**
  * Convenience function to check if database is connected
  */
 export function isDbConnected(): boolean {
