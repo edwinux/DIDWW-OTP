@@ -137,7 +137,7 @@ The gateway processes OTP requests through fraud detection, routes to appropriat
 
 ### Network / Security (Optional)
 - `TRUST_PROXY` - Express `trust proxy` value = number of trusted reverse-proxy hops (default: "1" = single nginx). Drives `req.ip`, which is the single source of truth for IP rate limiting, ASN/geo blocking, and the admin IP whitelist. Never use "true" (trusts the entire client-controllable X-Forwarded-For chain, allowing `req.ip` spoofing). Use "0" only with no proxy. See config/index.ts:43,400-408.
-- `WEBHOOK_INBOUND_SECRET` - Optional shared secret authenticating INBOUND DIDWW callbacks (/webhooks/dlr, /webhooks/cdr). When set, callbacks must supply a matching token via the `X-Webhook-Token` header or `?token=` query string. Unset = callbacks accepted with a warning log. See routes/index.ts:53-67.
+- `WEBHOOK_INBOUND_SECRET` - Optional shared secret authenticating INBOUND DIDWW callbacks (/webhooks/dlr, /webhooks/cdr). When set, callbacks must supply a matching token via the `X-Webhook-Token` header or `?token=` query string. Unset = callbacks accepted with a per-request warning log. See routes/index.ts:53-67.
 
 ### SMS Configuration (Optional)
 - `SMS_ENABLED` - Enable SMS channel (default: true)
