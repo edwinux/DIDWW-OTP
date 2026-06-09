@@ -9,6 +9,7 @@ import type { Express } from 'express';
 import type { DispatchService } from './services/DispatchService.js';
 import type { CdrController } from './controllers/CdrController.js';
 import { registerRoutes } from './routes/index.js';
+import { getTrustProxySetting } from './config/index.js';
 import { logger } from './utils/logger.js';
 
 /**
@@ -31,8 +32,11 @@ export function createServer(dispatchService: DispatchService, options?: ServerO
   // Support raw text for newline-delimited JSON (CDR streaming format)
   app.use(express.text({ limit: '1mb', type: 'text/plain' }));
 
-  // Trust proxy for accurate IP extraction
-  app.set('trust proxy', true);
+  // Trust proxy for accurate IP extraction.
+  // Configured to the number of known proxy hops (default 1 = nginx) so that
+  // client-supplied X-Forwarded-For headers cannot spoof req.ip. Never use `true`,
+  // which trusts the entire (attacker-controllable) forwarded chain.
+  app.set('trust proxy', getTrustProxySetting());
 
   // Register all routes
   registerRoutes(app, dispatchService, options?.cdrController);

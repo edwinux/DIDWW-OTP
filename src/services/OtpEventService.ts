@@ -10,33 +10,9 @@ import { OtpRequestRepository, type OtpStatus } from '../repositories/OtpRequest
 import { WebhookLogRepository } from '../repositories/WebhookLogRepository.js';
 import { WebhookService } from './WebhookService.js';
 import { getStatusTracker } from './StatusTracker.js';
+import { getStatusStateMachine } from './StatusStateMachine.js';
 import { getWebSocketServer } from '../admin/websocket.js';
 import { logger } from '../utils/logger.js';
-
-/**
- * Map channel events to high-level OTP status
- */
-const EVENT_TO_STATUS_MAP: Record<string, OtpStatus> = {
-  // SMS events
-  'sms:queued': 'pending',
-  'sms:sending': 'sending',
-  'sms:sent': 'sent',
-  'sms:delivered': 'delivered',
-  'sms:failed': 'failed',
-  'sms:undelivered': 'failed',
-
-  // Voice events
-  'voice:queued': 'pending',
-  'voice:calling': 'sending',
-  'voice:ringing': 'sent',
-  'voice:answered': 'sent',
-  'voice:playing': 'sent',
-  'voice:completed': 'delivered',
-  'voice:failed': 'failed',
-  'voice:no_answer': 'failed',
-  'voice:busy': 'failed',
-  'voice:hangup': 'failed',
-};
 
 /**
  * Singleton instance
@@ -92,9 +68,9 @@ export class OtpEventService {
         eventId: event.id,
       });
 
-      // Get high-level status from event
+      // Get high-level status from event (single source of truth: StatusStateMachine)
       const statusKey = `${channel}:${eventType}`;
-      let newStatus = EVENT_TO_STATUS_MAP[statusKey];
+      let newStatus = getStatusStateMachine().getStatusForEvent(channel, eventType);
 
       // Special case: voice:hangup with otp_played=true means successful delivery
       if (statusKey === 'voice:hangup' && eventData?.otp_played === true) {
@@ -134,7 +110,38 @@ export class OtpEventService {
     const updates: string[] = ['channel_status = ?', 'updated_at = ?'];
     const values: (string | number)[] = [channelStatus, Date.now()];
 
+    // Decide whether the high-level `status` column may be written. The channel_status
+    // (raw per-channel event) is always recorded, but the aggregate `status` must not
+    // be regressed or clobbered. Without this guard a late delivery report (e.g. a
+    // delayed sms:failed) can overwrite an already-verified / delivered outcome.
+    let writeStatus = !!status;
     if (status) {
+      const current = this.otpRepo.findById(requestId);
+      if (current) {
+        const stateMachine = getStatusStateMachine();
+        if (current.auth_status === 'verified' || current.auth_status === 'wrong_code') {
+          // Auth outcome is final - never let a delivery event overwrite it.
+          writeStatus = false;
+        } else if (stateMachine.isTerminal(current.status) && current.status !== status) {
+          // Do not move out of a terminal delivery state.
+          writeStatus = false;
+        } else if (!stateMachine.canTransition(current.status, status)) {
+          // Reject invalid / backward transitions (e.g. delivered -> failed).
+          writeStatus = false;
+        }
+        if (!writeStatus && current.status !== status) {
+          logger.debug('Skipping invalid status transition', {
+            requestId,
+            from: current.status,
+            to: status,
+            authStatus: current.auth_status,
+            event: `${channel}:${channelStatus}`,
+          });
+        }
+      }
+    }
+
+    if (status && writeStatus) {
       updates.push('status = ?');
       values.push(status);
     }
@@ -169,8 +176,7 @@ export class OtpEventService {
     if (!wsServer) return;
 
     // Get high-level status for backward compatibility
-    const statusKey = `${channel}:${eventType}`;
-    const status = EVENT_TO_STATUS_MAP[statusKey] || 'pending';
+    const status = getStatusStateMachine().getStatusForEvent(channel, eventType) || 'pending';
 
     // Broadcast status update (backward compatible)
     wsServer.broadcastOtpUpdate({

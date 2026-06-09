@@ -7,6 +7,7 @@
 
 import { EventEmitter } from 'events';
 import { WebhookLogRepository } from '../repositories/WebhookLogRepository.js';
+import { assertPublicWebhookUrl } from '../utils/ssrf.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -72,6 +73,23 @@ export class WebhookService extends EventEmitter {
    * Deliver webhook with retry logic
    */
   private async deliverWithRetry(webhookUrl: string, payload: WebhookPayload): Promise<void> {
+    // SSRF guard: refuse to deliver to non-public destinations (loopback, private,
+    // link-local, cloud metadata, etc.). Resolved here, just before delivery, to
+    // also narrow the DNS-rebinding window. A failure is permanent - do not retry.
+    try {
+      await assertPublicWebhookUrl(webhookUrl);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('Webhook delivery blocked (unsafe URL)', {
+        webhookUrl,
+        requestId: payload.request_id,
+        error: message,
+      });
+      this.webhookLogRepo.logAttempt(payload.request_id, webhookUrl, null, 1, `Blocked: ${message}`);
+      this.emit('failed', { webhookUrl, payload });
+      return;
+    }
+
     for (let attempt = 1; attempt <= this.config.maxRetries; attempt++) {
       try {
         const result = await this.deliver(webhookUrl, payload, attempt);
@@ -127,6 +145,9 @@ export class WebhookService extends EventEmitter {
         },
         body: JSON.stringify(payload),
         signal: controller.signal,
+        // Do not follow redirects: a 30x could point at an internal address that
+        // bypasses the pre-flight SSRF check.
+        redirect: 'manual',
       });
 
       clearTimeout(timeoutId);

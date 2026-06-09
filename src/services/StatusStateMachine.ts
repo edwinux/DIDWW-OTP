@@ -107,9 +107,11 @@ export class StatusStateMachine {
   }
 
   /**
-   * Get the high-level OTP status for a channel event
+   * Get the high-level OTP status for a channel event.
+   * `eventType` is accepted as a plain string (used only to build the lookup key)
+   * so callers using a structurally-compatible channel-event union don't need a cast.
    */
-  getStatusForEvent(channel: string, eventType: ChannelEventType): OtpStatus | undefined {
+  getStatusForEvent(channel: string, eventType: string): OtpStatus | undefined {
     const key = `${channel}:${eventType}`;
     return EVENT_TO_STATUS[key];
   }

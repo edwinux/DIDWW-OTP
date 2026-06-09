@@ -84,6 +84,73 @@ API_SECRET=your-secure-random-secret
 openssl rand -hex 32
 ```
 
+Callers authenticate by sending this value in the request body field `secret` or the
+`x-api-secret` header. The comparison is constant-time (timing-safe).
+
+## Security & Proxy
+
+### TRUST_PROXY
+
+Express `trust proxy` setting: the number of trusted reverse-proxy hops in front of the
+gateway. This single setting governs how `req.ip` (the client IP) is derived, and that IP
+is the source of truth for per-IP/subnet fraud rate limiting, ASN/geo blocking on
+`/dispatch`, the admin IP whitelist, and the `auto` cookie-Secure decision (via
+`X-Forwarded-Proto`).
+
+```bash
+TRUST_PROXY=1
+```
+
+**Default:** `1` (a single nginx hop — matches the standard deployment)
+
+**Values:**
+- A number (`0`, `1`, `2`, …) — count of trusted proxy hops
+- `0` — only when there is **no** reverse proxy in front of the gateway
+- A named/CIDR value (e.g. `loopback`) — passed through to Express verbatim
+
+**Operational requirement:** Set this to the actual number of proxy hops. For the
+documented single-nginx setup, keep the default `1`.
+
+**Failure mode:** If set too high (or to `true`), Express trusts the entire
+client-controllable `X-Forwarded-For` chain, letting an attacker spoof `req.ip` — which
+**bypasses both IP rate limiting on `/dispatch` and the admin IP whitelist**. Never use
+`true`. If set too low (`0`/`false`) behind a real proxy, every request appears to come
+from the proxy IP, breaking per-client IP differentiation.
+
+> Note: the `/dispatch` body does **not** accept a client-supplied `ip` field — the fraud
+> IP comes exclusively from `req.ip` so callers cannot rotate fake IPs.
+
+### WEBHOOK_INBOUND_SECRET
+
+Optional shared secret that authenticates **inbound** DIDWW provider callbacks
+(`POST /webhooks/dlr` delivery reports and `POST /webhooks/cdr` CDR batches). The token is
+compared constant-time.
+
+```bash
+WEBHOOK_INBOUND_SECRET=change-me-inbound-secret
+```
+
+**Default:** unset (inbound callbacks are accepted **without authentication**; a warning is
+logged per request)
+
+**How callers supply it:** the matching token must be sent either in the `X-Webhook-Token`
+header or appended as a `?token=<secret>` query parameter (header takes precedence). DIDWW
+callback configuration usually only allows a URL, so append the token to the callback URL:
+
+```
+https://otp-gw.example/webhooks/dlr?token=<WEBHOOK_INBOUND_SECRET>
+https://otp-gw.example/webhooks/cdr?token=<WEBHOOK_INBOUND_SECRET>
+```
+
+**Operational requirement:** Set this in production to close the open-callback exposure. If
+set, configure the token on **both** the DIDWW DLR and CDR callback URLs. Note that
+`/webhooks/auth` is **not** covered by this secret — it uses the regular `API_SECRET`
+(`x-api-secret` / body `secret`).
+
+**Failure mode:** If set but the supplied token is missing or does not match, the callback
+is rejected with HTTP `403 {error:"forbidden", message:"Invalid webhook token"}` and never
+processed — a mismatch silently drops all delivery reports / CDRs.
+
 ## Optional Variables
 
 ### Voice Message Settings
@@ -183,6 +250,77 @@ LOG_LEVEL=info
 - `info` - Normal operational logs (default)
 - `warn` - Warnings and errors only
 - `error` - Errors only
+
+### Admin Panel Security
+
+These harden the admin dashboard. They only apply when the admin panel is enabled.
+
+#### ADMIN_SESSION_SECRET
+
+Secret used to sign the express-session `admin.sid` cookie. Must be at least 16 characters
+when provided.
+
+```bash
+ADMIN_SESSION_SECRET=please-generate-a-long-random-string
+```
+
+**Default:** unset — a random per-process secret is generated at startup (and a warning is
+logged). The fallback is never a hardcoded/source-visible constant, so cookies cannot be
+forged offline even when this is absent.
+
+**Operational requirement:** Set this in production (e.g. `openssl rand -hex 32`) so admin
+sessions survive container restarts and deploys.
+
+**Failure mode:** When unset, the signing secret is regenerated on every process
+start/restart, invalidating all existing admin sessions — users must log in again after
+each restart or redeploy.
+
+#### ADMIN_COOKIE_SECURE
+
+Controls the `Secure` flag on the `admin.sid` session cookie.
+
+```bash
+ADMIN_COOKIE_SECURE=auto
+```
+
+**Default:** `auto`
+
+**Values:**
+- `auto` — set `Secure` only when the request is HTTPS (recommended; never sends the cookie
+  over plaintext in production)
+- `true` — always `Secure`
+- `false` — never `Secure` (local plain-HTTP development only)
+
+**Operational requirement:** For `auto` to detect HTTPS behind a TLS-terminating reverse
+proxy, the proxy must forward `X-Forwarded-Proto` and the app must trust it via
+`TRUST_PROXY` (default `1`). The standard nginx deployment terminates TLS and forwards this
+header, so `auto` yields Secure cookies in production.
+
+**Failure mode:** If set to `false`, the cookie has no `Secure` flag and can be sent over
+plaintext HTTP. If left `auto` but the proxy does not forward protocol info (or
+`TRUST_PROXY=0`), Express sees the connection as HTTP, never sets `Secure`, and the cookie
+may be transmitted insecurely.
+
+#### ADMIN_CORS_ORIGINS
+
+Comma-separated allowlist of Origins permitted to make cross-origin requests against the
+admin API.
+
+```bash
+ADMIN_CORS_ORIGINS=http://localhost:5173
+```
+
+**Default:** empty (unset) — no cross-origin access; no `Origin` is ever reflected.
+
+Only an `Origin` that **exactly** matches an allowlisted entry is reflected (with
+`Access-Control-Allow-Credentials: true`).
+
+**Operational requirement:** Leave unset in production (the admin UI is served same-origin).
+Set it only for local development against the dev frontend (e.g. the Vite dev server).
+
+**Failure mode:** Because credentials are allowed, a wildcard or untrusted origin would let
+that site make authenticated cross-origin requests against the admin API. Never use a
+wildcard.
 
 ## DIDWW Trunk Setup
 
