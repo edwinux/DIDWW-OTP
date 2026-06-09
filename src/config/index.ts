@@ -36,6 +36,11 @@ const configSchema = z.object({
       .string()
       .min(1, 'PUBLIC_IP is required')
       .regex(/^[\d.]+$|^[\da-fA-F:]+$/, 'PUBLIC_IP must be a valid IP address'),
+    // Express `trust proxy` setting. Number of trusted reverse-proxy hops (e.g. "1"
+    // for a single nginx in front), or a named/CIDR value supported by Express.
+    // Default "1" reflects the documented nginx deployment and prevents clients from
+    // spoofing X-Forwarded-For to forge their source IP. Use "0" only with no proxy.
+    trustProxy: z.string().default('1'),
   }),
 
   // Required - API Security
@@ -110,6 +115,11 @@ const configSchema = z.object({
   webhooks: z.object({
     timeout: z.coerce.number().int().min(1000).max(30000).default(5000),
     maxRetries: z.coerce.number().int().min(1).max(5).default(3),
+    // Shared secret for authenticating INBOUND provider callbacks (DLR/CDR).
+    // When set, /webhooks/dlr and /webhooks/cdr require a matching token
+    // (X-Webhook-Token header or ?token= query). When unset, callbacks are
+    // accepted unauthenticated (a startup warning is logged).
+    inboundSecret: z.string().optional(),
   }),
 
   // Admin UI configuration
@@ -121,6 +131,12 @@ const configSchema = z.object({
     ipWhitelist: z.string().optional(), // Comma-separated IPs or CIDR ranges
     sessionTtlMinutes: z.coerce.number().int().min(5).max(10080).default(480), // 8 hours default
     port: z.coerce.number().int().min(1).max(65535).default(80),
+    // Session cookie Secure flag. 'auto' (default) sets Secure when the request is
+    // HTTPS (honoured behind a TLS-terminating proxy via trust proxy + X-Forwarded-Proto).
+    cookieSecure: z.enum(['auto', 'true', 'false']).default('auto'),
+    // Comma-separated list of allowed CORS origins for the admin API. Empty (default)
+    // disables cross-origin access (admin UI is served same-origin in production).
+    corsOrigins: z.string().optional(),
   }),
 
   // AMI (Asterisk Manager Interface) configuration for SIP failure detection
@@ -176,6 +192,7 @@ function parseEnvVars(): Record<string, unknown> {
     },
     network: {
       publicIp: process.env.PUBLIC_IP,
+      trustProxy: process.env.TRUST_PROXY,
     },
     api: {
       secret: process.env.API_SECRET,
@@ -228,6 +245,7 @@ function parseEnvVars(): Record<string, unknown> {
     webhooks: {
       timeout: process.env.WEBHOOK_TIMEOUT,
       maxRetries: process.env.WEBHOOK_MAX_RETRIES,
+      inboundSecret: process.env.WEBHOOK_INBOUND_SECRET,
     },
     admin: {
       enabled: process.env.ADMIN_ENABLED,
@@ -237,6 +255,8 @@ function parseEnvVars(): Record<string, unknown> {
       ipWhitelist: process.env.ADMIN_IP_WHITELIST,
       sessionTtlMinutes: process.env.ADMIN_SESSION_TTL,
       port: process.env.ADMIN_PORT,
+      cookieSecure: process.env.ADMIN_COOKIE_SECURE,
+      corsOrigins: process.env.ADMIN_CORS_ORIGINS,
     },
     ami: {
       enabled: process.env.AMI_ENABLED,
@@ -306,7 +326,10 @@ function maskSecrets(config: Config): Record<string, unknown> {
     },
     fraud: config.fraud,
     channels: config.channels,
-    webhooks: config.webhooks,
+    webhooks: {
+      ...config.webhooks,
+      inboundSecret: config.webhooks.inboundSecret ? '***MASKED***' : undefined,
+    },
     admin: {
       ...config.admin,
       password: config.admin.password ? '***MASKED***' : undefined,
@@ -366,6 +389,22 @@ export function getConfig(): Config {
  */
 export function resetConfig(): void {
   configInstance = null;
+}
+
+/**
+ * Resolve the configured TRUST_PROXY value into a form Express accepts.
+ * - Numeric strings ("0", "1", "2") -> number of trusted hops
+ * - "true"/"false" -> boolean (discouraged; "true" trusts the whole XFF chain)
+ * - Anything else (e.g. "loopback", a CIDR list) -> passed through verbatim
+ */
+export function getTrustProxySetting(): boolean | number | string {
+  const value = getConfig().network.trustProxy.trim();
+  if (/^\d+$/.test(value)) {
+    return Number(value);
+  }
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return value;
 }
 
 /**

@@ -6,8 +6,10 @@
 
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Server as HttpServer } from 'http';
-import type { IncomingMessage } from 'http';
+import type { IncomingMessage, ServerResponse } from 'http';
+import type { RequestHandler } from 'express';
 import crypto from 'crypto';
+import { getConfig } from '../config/index.js';
 import { logger } from '../utils/logger.js';
 
 interface AuthenticatedWebSocket extends WebSocket {
@@ -30,8 +32,10 @@ export class AdminWebSocketServer {
   private wss: WebSocketServer;
   private clients: Map<string, AuthenticatedWebSocket> = new Map();
   private pingInterval: NodeJS.Timeout | null = null;
+  private sessionMiddleware?: RequestHandler;
 
-  constructor(server: HttpServer, path: string = '/admin/ws') {
+  constructor(server: HttpServer, sessionMiddleware?: RequestHandler, path: string = '/admin/ws') {
+    this.sessionMiddleware = sessionMiddleware;
     this.wss = new WebSocketServer({
       server,
       path,
@@ -52,15 +56,65 @@ export class AdminWebSocketServer {
   }
 
   /**
-   * Verify client connection (session validation would go here)
+   * Verify client connection by validating the admin session cookie.
+   *
+   * Runs the express-session middleware against the upgrade request so the signed
+   * `admin.sid` cookie is unsigned and resolved against the session store, then
+   * requires an authenticated, non-expired admin session. Without this, any client
+   * reaching /admin/ws could subscribe to the live OTP event stream (phone numbers,
+   * fraud scores, shadow-ban flags) with no authentication.
    */
   private verifyClient(
-    _info: { origin: string; req: IncomingMessage; secure: boolean },
+    info: { origin: string; req: IncomingMessage; secure: boolean },
     callback: (result: boolean, code?: number, message?: string) => void
   ): void {
-    // For now, accept all connections
-    // Session validation can be added by parsing cookies from info.req.headers.cookie
-    callback(true);
+    if (!this.sessionMiddleware) {
+      // Fail closed: without a session validator we cannot authenticate the client.
+      logger.error('WebSocket connection rejected: session middleware not configured');
+      callback(false, 503, 'Session validation unavailable');
+      return;
+    }
+
+    // Minimal response stub - the session middleware only reads the request cookie
+    // and loads the session; it never writes a response during the handshake.
+    const stubRes = {
+      setHeader: () => {},
+      getHeader: () => undefined,
+      removeHeader: () => {},
+      writeHead: () => {},
+      end: () => {},
+      on: () => {},
+      once: () => {},
+      emit: () => {},
+    } as unknown as ServerResponse;
+
+    try {
+      this.sessionMiddleware(info.req as never, stubRes as never, () => {
+        const session = (info.req as IncomingMessage & {
+          session?: { adminAuthenticated?: boolean; loginTimestamp?: number };
+        }).session;
+
+        if (!session?.adminAuthenticated) {
+          callback(false, 401, 'Unauthorized');
+          return;
+        }
+
+        // Enforce the same session TTL as the REST middleware.
+        const ttlMs = getConfig().admin.sessionTtlMinutes * 60 * 1000;
+        const age = Date.now() - (session.loginTimestamp || 0);
+        if (age > ttlMs) {
+          callback(false, 401, 'Session expired');
+          return;
+        }
+
+        callback(true);
+      });
+    } catch (error) {
+      logger.error('WebSocket session validation error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      callback(false, 401, 'Unauthorized');
+    }
   }
 
   /**
@@ -71,7 +125,7 @@ export class AdminWebSocketServer {
     const client = ws as AuthenticatedWebSocket;
 
     client.clientId = clientId;
-    client.isAuthenticated = true; // Will be validated via session cookie
+    client.isAuthenticated = true; // Validated in verifyClient (session cookie) before reaching here
     client.subscriptions = new Set();
     client.lastPing = Date.now();
 
@@ -260,9 +314,12 @@ let wsServerInstance: AdminWebSocketServer | null = null;
 /**
  * Initialize the WebSocket server
  */
-export function initializeWebSocket(server: HttpServer): AdminWebSocketServer {
+export function initializeWebSocket(
+  server: HttpServer,
+  sessionMiddleware?: RequestHandler
+): AdminWebSocketServer {
   if (!wsServerInstance) {
-    wsServerInstance = new AdminWebSocketServer(server);
+    wsServerInstance = new AdminWebSocketServer(server, sessionMiddleware);
   }
   return wsServerInstance;
 }
