@@ -118,7 +118,7 @@ const configSchema = z.object({
     // Shared secret for authenticating INBOUND provider callbacks (DLR/CDR).
     // When set, /webhooks/dlr and /webhooks/cdr require a matching token
     // (X-Webhook-Token header or ?token= query). When unset, callbacks are
-    // accepted unauthenticated (a startup warning is logged).
+    // accepted unauthenticated (a per-request warning is logged).
     inboundSecret: z.string().optional(),
   }),
 
