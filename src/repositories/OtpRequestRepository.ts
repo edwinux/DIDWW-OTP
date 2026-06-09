@@ -501,35 +501,6 @@ export class OtpRequestRepository {
   }
 
   /**
-   * Get channel-specific statistics
-   * Excludes shadow_banned requests from success/delivery rates
-   */
-  getChannelStats(channel: 'sms' | 'voice'): {
-    total: number;
-    delivered: number;
-    verified: number;
-    avgDuration: number | null;
-  } {
-    const stmt = this.db.prepare(`
-      SELECT
-        COUNT(CASE WHEN shadow_banned = 0 THEN 1 END) as total,
-        SUM(CASE WHEN shadow_banned = 0 AND status IN ('delivered', 'sent', 'verified') THEN 1 ELSE 0 END) as delivered,
-        SUM(CASE WHEN shadow_banned = 0 AND auth_status = 'verified' THEN 1 ELSE 0 END) as verified,
-        AVG(CASE WHEN shadow_banned = 0 AND answer_time IS NOT NULL AND end_time IS NOT NULL
-            THEN (end_time - answer_time) / 1000.0 ELSE NULL END) as avgDuration
-      FROM otp_requests
-      WHERE channel = ?
-    `);
-    const result = stmt.get(channel) as {
-      total: number;
-      delivered: number;
-      verified: number;
-      avgDuration: number | null;
-    };
-    return result;
-  }
-
-  /**
    * Get recent verified OTP requests
    */
   getRecentVerified(limit: number = 5): OtpRequest[] {

@@ -585,10 +585,3 @@ export function runMigrations(): void {
 
   logger.info('Database migrations complete', { version: SCHEMA_VERSION });
 }
-
-/**
- * Check if database is initialized
- */
-export function isDatabaseInitialized(): boolean {
-  return dbManager.tableExists('otp_requests');
-}

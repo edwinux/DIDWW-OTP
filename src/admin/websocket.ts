@@ -237,22 +237,6 @@ export class AdminWebSocketServer {
   }
 
   /**
-   * Broadcast new OTP request to subscribed clients
-   */
-  broadcastOtpRequest(request: {
-    id: string;
-    phone: string;
-    status: string;
-    channel?: string;
-    fraud_score: number;
-    shadow_banned: number;
-    created_at: number;
-    country_code?: string;
-  }): void {
-    this.broadcast('otp-requests', 'otp-request:created', request);
-  }
-
-  /**
    * Broadcast OTP request status update
    */
   broadcastOtpUpdate(update: {

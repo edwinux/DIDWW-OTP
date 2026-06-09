@@ -106,15 +106,6 @@ export function seedAsnBlocklist(): void {
 }
 
 /**
- * Get count of blocked ASNs
- */
-export function getAsnBlocklistCount(): number {
-  const db = dbManager.getDb();
-  const result = db.prepare('SELECT COUNT(*) as count FROM asn_blocklist').get() as { count: number };
-  return result.count;
-}
-
-/**
  * Default caller ID routes
  * Provides fallback routes for fresh installations
  */
@@ -169,13 +160,4 @@ export function seedCallerIdRoutes(): void {
   insertMany(DEFAULT_CALLER_ID_ROUTES);
 
   logger.info('Default caller ID routes seeded successfully', { entries: DEFAULT_CALLER_ID_ROUTES.length });
-}
-
-/**
- * Get count of caller ID routes
- */
-export function getCallerIdRoutesCount(): number {
-  const db = dbManager.getDb();
-  const result = db.prepare('SELECT COUNT(*) as count FROM caller_id_routes').get() as { count: number };
-  return result.count;
 }

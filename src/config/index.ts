@@ -181,6 +181,18 @@ const configSchema = z.object({
     // per-minute voice rate into a whole-call cost estimate. Default 60s (1 minute).
     assumedVoiceCallSeconds: z.coerce.number().int().min(1).max(3600).default(60),
   }),
+
+  // Data-retention sweeper. Disabled by default: NO rows are ever deleted unless an
+  // operator opts in via DATA_RETENTION_ENABLED=true. Windows are in days; the sweep
+  // runs once on startup and then every sweepIntervalHours.
+  retention: z.object({
+    enabled: z.coerce.boolean().default(false),
+    otpRequestsDays: z.coerce.number().int().min(1).max(3650).default(90),
+    otpEventsDays: z.coerce.number().int().min(1).max(3650).default(90),
+    webhookLogsDays: z.coerce.number().int().min(1).max(3650).default(30),
+    cdrDays: z.coerce.number().int().min(1).max(3650).default(365),
+    sweepIntervalHours: z.coerce.number().int().min(1).max(168).default(24),
+  }),
 });
 
 /**
@@ -292,6 +304,14 @@ function parseEnvVars(): Record<string, unknown> {
       defaultSmsRateUnits: process.env.CDR_DEFAULT_SMS_RATE_UNITS,
       defaultVoiceRateUnits: process.env.CDR_DEFAULT_VOICE_RATE_UNITS,
       assumedVoiceCallSeconds: process.env.CDR_ASSUMED_VOICE_CALL_SECONDS,
+    },
+    retention: {
+      enabled: process.env.DATA_RETENTION_ENABLED,
+      otpRequestsDays: process.env.DATA_RETENTION_OTP_REQUESTS_DAYS,
+      otpEventsDays: process.env.DATA_RETENTION_OTP_EVENTS_DAYS,
+      webhookLogsDays: process.env.DATA_RETENTION_WEBHOOK_LOGS_DAYS,
+      cdrDays: process.env.DATA_RETENTION_CDR_DAYS,
+      sweepIntervalHours: process.env.DATA_RETENTION_SWEEP_INTERVAL_HOURS,
     },
   };
 }

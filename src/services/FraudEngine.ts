@@ -157,6 +157,13 @@ export class FraudEngine {
       };
     }
 
+    // Count this evaluated request against the IP subnet's reputation. This is the
+    // denominator for the trust_score the verified/failed recorders compute, so it
+    // must be bumped once per rule-evaluated request (after the disabled/whitelist
+    // early-returns above). Without it, total_requests stays 0 and trust_score divides
+    // by zero. Whitelisted and fraud-disabled requests are intentionally not counted.
+    this.fraudRepo.incrementIpRequests(ipSubnet);
+
     // Rule 0: Invalid phone number (instant shadow-ban)
     const phoneService = getPhoneNumberService();
     if (!phoneService.isValid(phone)) {
