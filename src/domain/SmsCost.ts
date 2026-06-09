@@ -29,7 +29,10 @@ export class SmsCost {
     if (price === null || price === undefined || fragments === null || fragments === undefined) {
       return null;
     }
-    if (isNaN(price) || isNaN(fragments) || fragments < 0 || price < 0) {
+    // Require at least one fragment. A zero-fragment DLR yields a $0 cost that,
+    // if stored and fed to the EMA rate-learner, permanently drags learned rates
+    // toward zero (and 0 fragments has no meaningful per-fragment cost).
+    if (isNaN(price) || isNaN(fragments) || fragments <= 0 || price < 0) {
       return null;
     }
     const totalUsd = price * fragments;

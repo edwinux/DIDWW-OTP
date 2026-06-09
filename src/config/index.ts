@@ -171,6 +171,9 @@ const configSchema = z.object({
     // Default rates for cost prediction when no learned data (in 1/10000 dollars)
     defaultSmsRateUnits: z.coerce.number().int().min(1).max(100000).default(100), // $0.01 per SMS
     defaultVoiceRateUnits: z.coerce.number().int().min(1).max(100000).default(200), // $0.02 per minute
+    // Assumed billable duration of a voice OTP call, used to convert the stored
+    // per-minute voice rate into a whole-call cost estimate. Default 60s (1 minute).
+    assumedVoiceCallSeconds: z.coerce.number().int().min(1).max(3600).default(60),
   }),
 });
 
@@ -281,6 +284,7 @@ function parseEnvVars(): Record<string, unknown> {
       learningBatchSize: process.env.CDR_LEARNING_BATCH_SIZE,
       defaultSmsRateUnits: process.env.CDR_DEFAULT_SMS_RATE_UNITS,
       defaultVoiceRateUnits: process.env.CDR_DEFAULT_VOICE_RATE_UNITS,
+      assumedVoiceCallSeconds: process.env.CDR_ASSUMED_VOICE_CALL_SECONDS,
     },
   };
 }

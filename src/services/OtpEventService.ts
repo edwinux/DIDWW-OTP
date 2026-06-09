@@ -27,6 +27,20 @@ export class OtpEventService {
   private otpRepo: OtpRequestRepository;
   private webhookService: WebhookService;
 
+  /**
+   * Event-metadata keys that are internal/admin-only and must NEVER be forwarded
+   * to client-configured webhooks. These can leak provider-side operational detail
+   * (e.g. "Insufficient balance", "SMS trunk is blocked", raw DIDWW status/codes).
+   * They are still stored in the event DB and broadcast to the authenticated admin
+   * WebSocket — only the outbound client webhook payload is redacted.
+   */
+  private static readonly INTERNAL_METADATA_KEYS = new Set<string>([
+    'error', // raw provider error_message (may contain DIDWW-internal text)
+    'error_code', // internal DIDWW numeric code
+    'error_description', // admin-only DIDWW error-code description
+    'didww_status', // raw provider status string
+  ]);
+
   constructor() {
     this.eventRepo = new OtpEventRepository();
     this.otpRepo = new OtpRequestRepository();
@@ -218,8 +232,24 @@ export class OtpEventService {
       status: status || 'sending',
       channel,
       timestamp: Date.now(),
-      metadata: eventData,
+      metadata: this.toClientMetadata(eventData),
     });
+  }
+
+  /**
+   * Strip internal/admin-only keys from event metadata before it is forwarded to
+   * a client-configured webhook. Returns undefined when nothing client-safe remains.
+   */
+  private toClientMetadata(
+    eventData?: Record<string, unknown>
+  ): Record<string, unknown> | undefined {
+    if (!eventData) return undefined;
+    const safe: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(eventData)) {
+      if (OtpEventService.INTERNAL_METADATA_KEYS.has(key)) continue;
+      safe[key] = value;
+    }
+    return Object.keys(safe).length > 0 ? safe : undefined;
   }
 
   /**
