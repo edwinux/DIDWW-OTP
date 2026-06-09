@@ -37,15 +37,20 @@ export function expandIPv6(ip: string): string {
     const nonEmptyGroups = groups.filter((g) => g !== '').length;
     const missingGroups = 8 - nonEmptyGroups;
 
-    // Build expanded array
+    // Build expanded array.
+    // A "::" produces one or more empty strings (more than one when it is at the
+    // start/end of the address). Insert the zero-fill exactly once, tracked by a
+    // dedicated flag - do NOT key off "the previous group was 0000", which wrongly
+    // suppresses the fill when a literal zero group precedes "::" (e.g. 2001:0:0::5).
     const expanded: string[] = [];
+    let inserted = false;
     for (const group of groups) {
       if (group === '') {
-        // First empty string triggers expansion
-        if (expanded.length === 0 || expanded[expanded.length - 1] !== '0000') {
+        if (!inserted) {
           for (let i = 0; i < missingGroups; i++) {
             expanded.push('0000');
           }
+          inserted = true;
         }
       } else {
         expanded.push(group.padStart(4, '0'));

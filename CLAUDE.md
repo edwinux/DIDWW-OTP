@@ -133,7 +133,11 @@ The gateway processes OTP requests through fraud detection, routes to appropriat
 - `DIDWW_PASSWORD` - SIP trunk password
 - `DIDWW_CALLER_ID` - Outbound caller ID (E.164 without +)
 - `PUBLIC_IP` - Server public IP for SIP/RTP
-- `API_SECRET` - API authentication secret
+- `API_SECRET` - API authentication secret (min 8 chars)
+
+### Network / Security (Optional)
+- `TRUST_PROXY` - Express `trust proxy` value = number of trusted reverse-proxy hops (default: "1" = single nginx). Drives `req.ip`, which is the single source of truth for IP rate limiting, ASN/geo blocking, and the admin IP whitelist. Never use "true" (trusts the entire client-controllable X-Forwarded-For chain, allowing `req.ip` spoofing). Use "0" only with no proxy. See config/index.ts:43,400-408.
+- `WEBHOOK_INBOUND_SECRET` - Optional shared secret authenticating INBOUND DIDWW callbacks (/webhooks/dlr, /webhooks/cdr). When set, callbacks must supply a matching token via the `X-Webhook-Token` header or `?token=` query string. Unset = callbacks accepted with a warning log. See routes/index.ts:53-67.
 
 ### SMS Configuration (Optional)
 - `SMS_ENABLED` - Enable SMS channel (default: true)
@@ -157,6 +161,9 @@ The gateway processes OTP requests through fraud detection, routes to appropriat
 - `ADMIN_USERNAME` - Admin login username
 - `ADMIN_PASSWORD` - Admin login password (min 8 chars)
 - `ADMIN_PORT` - Admin panel port (default: 80)
+- `ADMIN_SESSION_SECRET` - Session cookie signing secret (min 16 chars). Unset = random per-process secret generated at startup (sessions lost on restart); set in production. See admin/server.ts:39.
+- `ADMIN_COOKIE_SECURE` - Secure flag on the `admin.sid` cookie: `auto` (default, Secure only over HTTPS — requires the proxy to forward X-Forwarded-Proto and a correct TRUST_PROXY), `true`, or `false`. Use `false` only for local plain-HTTP dev. See admin/server.ts:51.
+- `ADMIN_CORS_ORIGINS` - Comma-separated exact-match Origin allowlist for cross-origin admin API access. Empty (default) = no cross-origin access (admin UI is same-origin). Never use a wildcard (credentials are allowed). See admin/server.ts:81.
 
 See `.env.example` for complete configuration reference.
 
@@ -185,6 +192,21 @@ SMS uses REST API credentials (SMS_USERNAME/SMS_PASSWORD) while Voice uses SIP t
 
 ### DIDWW DLR Callback Handling
 SMS delivery reports arrive via POST /webhooks/dlr in JSON:API format. Controller maps DIDWW-specific status codes to normalized events, translates error codes to descriptions (admin logs only), and emits events via OtpEventService. See WebhookController.ts:125-228.
+
+### IP-Trust Hardening
+Client IP comes solely from `req.ip` via the configurable `TRUST_PROXY` setting (default "1" = one nginx hop), so a client-supplied X-Forwarded-For cannot forge it. The /dispatch body schema deliberately omits any `ip` field (a client-sent `ip` is ignored), preventing fake-IP rotation to bypass per-IP/subnet rate limiting and ASN/geo blocking. The API secret check uses `safeCompare()` (crypto.timingSafeEqual) for constant-time comparison; the secret is read from body `secret` or `x-api-secret` and stripped from `req.body` after auth. See config/index.ts:400-408, DispatchController.ts:16-31,65, routes/index.ts:21-39, utils/secureCompare.ts:16-25.
+
+### Inbound Callback Authentication
+The `inboundWebhookAuth` middleware guards POST /webhooks/dlr and /webhooks/cdr. When `WEBHOOK_INBOUND_SECRET` is set, it requires a token via the `X-Webhook-Token` header (precedence) or `?token=` query, compared with `safeCompare`; mismatch returns 403 `{error:'forbidden', message:'Invalid webhook token'}`. When unset, callbacks pass with a per-request warning log. /webhooks/auth uses the regular API secret instead. See routes/index.ts:53-67,123.
+
+### Outbound-Webhook SSRF Protection
+Before each client-configured outbound delivery, `WebhookService.deliverWithRetry` calls `assertPublicWebhookUrl()`: it enforces http(s) only, resolves the host via DNS, and rejects any IP literal or resolved address in private/loopback/link-local (incl. 169.254.169.254 cloud metadata)/CGNAT/reserved ranges (IPv4 and IPv6, including mapped-IPv4). A blocked URL is a permanent non-retried failure (logged "Blocked: ..."). The fetch uses `redirect:'manual'` so 30x cannot bounce to an internal target. See WebhookService.ts:80,150 and utils/ssrf.ts.
+
+### Admin-WebSocket Authentication
+`/admin/ws` requires an authenticated admin session at the handshake. `verifyClient` runs the express-session middleware against the upgrade request, requires `session.adminAuthenticated`, and enforces the same TTL as the REST middleware (`ADMIN_SESSION_TTL`, default 480 min). Fails closed: 503 if session middleware is unwired, 401 if unauthenticated/expired. Prevents unauthenticated clients from subscribing to the live event stream (phone numbers, fraud scores, shadow-ban flags). See admin/websocket.ts:67.
+
+### Status-Transition Validation
+`StatusStateMachine` defines valid OTP status transitions and terminal states (failed/verified/rejected/expired). `OtpEventService.emit()` guards every update with it, so out-of-order channel/DLR events cannot regress or clobber status (e.g. a late `sent` cannot overwrite `delivered`, and terminal states are never moved). Invalid transitions are skipped and logged. See StatusStateMachine.ts and OtpEventService.ts:115-133.
 
 ### Build Version Tracking
 Docker images are tagged with git commit SHA and build timestamp during CI/CD build. Version metadata is injected as BUILD_COMMIT and BUILD_TIME environment variables, exposed via GET /admin/version endpoint, and displayed in admin panel sidebar. Shows short SHA in UI with full SHA and build time on tooltip hover. Helps track deployed versions in production. See Dockerfile:29-33, routes.ts:126-131, and Sidebar.tsx:145-167.
@@ -258,6 +280,14 @@ Single source of truth: `/opt/didww-otp/`
 See docs/DEPLOYMENT.md for detailed deployment instructions.
 
 ## Recent Changes
+Security Hardening Pass:
+- Configurable `TRUST_PROXY` (default "1") so `req.ip` cannot be spoofed via X-Forwarded-For; /dispatch ignores client-supplied `ip`
+- Constant-time secret comparison (safeCompare) for the API secret and the new optional `WEBHOOK_INBOUND_SECRET` guarding inbound DLR/CDR callbacks
+- Outbound-webhook SSRF protection (private/metadata IP rejection, http(s)-only, `redirect:'manual'`)
+- Admin WebSocket (/admin/ws) now requires an authenticated session at handshake (fails closed)
+- Admin session hardening: `ADMIN_SESSION_SECRET`, `ADMIN_COOKIE_SECURE` (default `auto`), `ADMIN_CORS_ORIGINS` allowlist
+- StatusStateMachine guards prevent out-of-order events from clobbering OTP status
+
 Phone Number Validation (Dec 2024):
 - Added phone validation as FraudEngine Rule 0 using libphonenumber-js
 - Invalid numbers are shadow-banned (fake success, no delivery)
