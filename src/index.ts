@@ -10,6 +10,7 @@ import { ariManager } from './ari/client.js';
 import { registerStasisHandlers } from './ari/handlers.js';
 import { getAmiClient } from './ami/client.js';
 import { registerAmiHandlers } from './ami/handlers.js';
+import { getCallTracker } from './services/CallTrackerService.js';
 import { OtpRequestRepository, FraudRulesRepository, WebhookLogRepository, WhitelistRepository, CdrRepository, CarrierRatesRepository } from './repositories/index.js';
 import { CdrController } from './controllers/CdrController.js';
 import { RateLearningService } from './services/RateLearningService.js';
@@ -127,6 +128,10 @@ async function main(): Promise<void> {
     const shutdown = async (signal: string) => {
       logger.info(`Received ${signal}, shutting down...`);
       await ariManager.disconnect();
+      if (config.ami.enabled) {
+        getAmiClient().disconnect();
+      }
+      getCallTracker().stopSweeper();
       getAsnDatabase().stopPeriodicUpdates();
       getPhoneNumberService().shutdown();
       rateLearningService?.stopPeriodicLearning();
@@ -136,11 +141,13 @@ async function main(): Promise<void> {
     process.on('SIGTERM', () => shutdown('SIGTERM'));
     process.on('SIGINT', () => shutdown('SIGINT'));
 
-    // Connect to Asterisk ARI
-    const client = await ariManager.connect(['otp-stasis']);
+    // Register Stasis event handlers on every (re)connect. Registering via the
+    // callback (instead of once on the returned client) ensures handlers survive a
+    // hard ARI reconnect, which replaces the underlying client object.
+    ariManager.setOnConnected((client) => registerStasisHandlers(client));
 
-    // Register Stasis event handlers
-    registerStasisHandlers(client);
+    // Connect to Asterisk ARI (triggers the callback above on success)
+    await ariManager.connect(['otp-stasis']);
 
     // Connect to AMI for SIP failure detection (optional)
     if (config.ami.enabled && config.ami.secret) {

@@ -61,6 +61,51 @@ class CallTrackerService {
   // ARI channel ID to request mapping (for StasisEnd correlation)
   private ariChannelIdToRequest = new Map<string, string>();
 
+  // Periodic sweeper to evict calls that never received a terminal event
+  // (e.g. unanswered calls when AMI is disabled / a hangup cannot be correlated).
+  // Without this, the maps above grow without bound for the process lifetime.
+  private sweepTimer: NodeJS.Timeout | null = null;
+  private readonly maxCallAgeMs = 150_000; // 2.5 min (originate timeout 30s + margin)
+  private readonly sweepIntervalMs = 60_000;
+
+  /**
+   * Start the periodic sweeper if it is not already running.
+   */
+  private ensureSweeper(): void {
+    if (this.sweepTimer) return;
+    this.sweepTimer = setInterval(() => this.sweepStale(), this.sweepIntervalMs);
+    // Do not keep the event loop alive solely for the sweeper.
+    if (typeof this.sweepTimer.unref === 'function') {
+      this.sweepTimer.unref();
+    }
+  }
+
+  /**
+   * Evict call states older than the maximum call age. Cleans up all secondary maps.
+   */
+  private sweepStale(): void {
+    const now = Date.now();
+    for (const [requestId, state] of this.activeCalls.entries()) {
+      if (now - state.startTime > this.maxCallAgeMs) {
+        logger.warn('CallTracker: Sweeping stale call (no terminal event received)', {
+          requestId,
+          ageMs: now - state.startTime,
+        });
+        this.cleanup(requestId, state);
+      }
+    }
+  }
+
+  /**
+   * Stop the periodic sweeper (call on shutdown).
+   */
+  stopSweeper(): void {
+    if (this.sweepTimer) {
+      clearInterval(this.sweepTimer);
+      this.sweepTimer = null;
+    }
+  }
+
   /**
    * Register a new call when origination starts
    */
@@ -70,6 +115,9 @@ class CallTrackerService {
     code: string,
     callerId: string
   ): CallState {
+    // Ensure the stale-call sweeper is running once we start tracking calls.
+    this.ensureSweeper();
+
     // Register channel pattern for AMI correlation
     // Channel names are like: PJSIP/14155551234-00000001
     const normalizedPhone = phone.replace(/^\+/, '');
@@ -390,5 +438,6 @@ export function getCallTracker(): CallTrackerService {
  * Reset the CallTracker (for testing)
  */
 export function resetCallTracker(): void {
+  instance?.stopSweeper();
   instance = null;
 }

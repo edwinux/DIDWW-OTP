@@ -119,6 +119,13 @@ function handleHangup(event: AmiHangupEvent): void {
     return;
   }
 
+  // Capture and immediately remove any stored SIP cause for this channel.
+  // Doing this unconditionally (before the early returns below) prevents the
+  // sipCauseByChannel map from leaking entries for untracked, already-ended, or
+  // normal-clearing hangups.
+  const sipInfo = sipCauseByChannel.get(channel);
+  sipCauseByChannel.delete(channel);
+
   const causeInfo = getCauseInfo(cause);
 
   // Find the associated request - try multiple correlation methods
@@ -167,10 +174,7 @@ function handleHangup(event: AmiHangupEvent): void {
     // End call and get durations
     const result = tracker.endCall(requestId);
 
-    // Check if we have a SIP code for this channel (more accurate than Q.850)
-    const sipInfo = sipCauseByChannel.get(channel);
-    sipCauseByChannel.delete(channel); // Clean up
-
+    // SIP code (captured above) is more accurate than the Q.850 cause when present
     let description: string;
     let errorMessage: string;
 
