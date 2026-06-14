@@ -5,6 +5,13 @@ on:
     branches:
       - main
 
+# Serialize production deploys. Only one Build-and-Deploy run executes at a time;
+# concurrent pushes to main queue (cancel-in-progress: false) so every commit still
+# deploys, in order, instead of racing each other onto the single production host.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
 env:
   REGISTRY: ghcr.io
 
